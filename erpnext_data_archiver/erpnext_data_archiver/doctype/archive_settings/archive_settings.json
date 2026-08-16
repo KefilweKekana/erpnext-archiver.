@@ -1,0 +1,150 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-08-14 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+  "field_order": [
+  "enabled",
+  "auto_archive",
+  "require_backup_before_archive",
+  "column_break_main",
+  "batch_size",
+  "archive_through_year",
+  "cutoff_date",
+  "section_break_backup",
+  "last_backup_id",
+  "last_backup_checksum",
+  "confirmation_phrase",
+  "section_break_rules",
+  "doc_type_rules",
+  "section_break_perms",
+  "permission_matrix_note"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "description": "Master switch. When disabled no archiving runs.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "default": "0",
+   "description": "Automatically archive data older than the current fiscal year once per day (background job).",
+   "fieldname": "auto_archive",
+   "fieldtype": "Check",
+   "label": "Auto Archive Daily"
+  },
+  {
+   "default": "1",
+   "description": "Block archive until last_backup_id and last_backup_checksum are set (PRE-006).",
+   "fieldname": "require_backup_before_archive",
+   "fieldtype": "Check",
+   "label": "Require Backup Reference"
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "2000",
+   "description": "Rows copied per batch. Lower values keep locks shorter on busy sites.",
+   "fieldname": "batch_size",
+   "fieldtype": "Int",
+   "label": "Batch Size"
+  },
+  {
+   "description": "Pick the last closed fiscal year to move out of live tables (e.g. 2025). Everything through the end of that year is archived; the current year stays live. This sets the cutoff date automatically.",
+   "fieldname": "archive_through_year",
+   "fieldtype": "Data",
+   "label": "Archive Through Fiscal Year"
+  },
+  {
+   "description": "Advanced: only rows before this date are archived. Usually filled from Archive Through Fiscal Year. Leave empty to auto-use the start of the current fiscal year.",
+   "fieldname": "cutoff_date",
+   "fieldtype": "Date",
+   "label": "Archive Cutoff Date"
+  },
+  {
+   "fieldname": "section_break_backup",
+   "fieldtype": "Section Break",
+   "label": "Backup Evidence"
+  },
+  {
+   "description": "Identifier of the verified database/files backup taken before archive.",
+   "fieldname": "last_backup_id",
+   "fieldtype": "Data",
+   "label": "Last Backup ID"
+  },
+  {
+   "description": "Checksum or restore-test status of that backup.",
+   "fieldname": "last_backup_checksum",
+   "fieldtype": "Data",
+   "label": "Last Backup Checksum"
+  },
+  {
+   "default": "ARCHIVE",
+   "description": "User must type this phrase to confirm archive (maker control).",
+   "fieldname": "confirmation_phrase",
+   "fieldtype": "Data",
+   "label": "Confirmation Phrase"
+  },
+  {
+   "fieldname": "section_break_rules",
+   "fieldtype": "Section Break",
+   "label": "DocTypes To Archive"
+  },
+  {
+   "fieldname": "doc_type_rules",
+   "fieldtype": "Table",
+   "label": "DocType Rules",
+   "options": "Archive DocType Rule"
+  },
+  {
+   "fieldname": "section_break_perms",
+   "fieldtype": "Section Break",
+   "label": "Permission Matrix"
+  },
+  {
+   "default": "Preview/Browse: Archive Manager, Accounts Manager, Stock Manager, System Manager.\\nArchive/Restore/Config: Archive Manager, System Manager.\\nAudit Log: read for managers; append-only (no delete).",
+   "fieldname": "permission_matrix_note",
+   "fieldtype": "Small Text",
+   "label": "Roles",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-08-15 20:50:00",
+ "modified_by": "Administrator",
+ "module": "ERPNext Data Archiver",
+ "name": "Archive Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Archive Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

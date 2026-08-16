@@ -1,0 +1,139 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-08-15 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "cutoff_date",
+  "item_code",
+  "warehouse",
+  "queue_index",
+  "qty",
+  "valuation_rate",
+  "stock_value",
+  "posting_date",
+  "voucher_type",
+  "voucher_no",
+  "is_synthetic",
+  "archive_run",
+  "idempotency_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "cutoff_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Cutoff Date",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item",
+   "options": "Item",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Warehouse",
+   "options": "Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "queue_index",
+   "fieldtype": "Int",
+   "label": "Queue Index",
+   "read_only": 1
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "valuation_rate",
+   "fieldtype": "Currency",
+   "label": "Valuation Rate",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_value",
+   "fieldtype": "Currency",
+   "label": "Stock Value",
+   "read_only": 1
+  },
+  {
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "label": "Posting Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "voucher_type",
+   "fieldtype": "Data",
+   "label": "Voucher Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "voucher_no",
+   "fieldtype": "Data",
+   "label": "Voucher No",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_synthetic",
+   "fieldtype": "Check",
+   "label": "Synthetic Opening",
+   "read_only": 1
+  },
+  {
+   "fieldname": "archive_run",
+   "fieldtype": "Link",
+   "label": "Archive Run",
+   "options": "Archive Run",
+   "read_only": 1
+  },
+  {
+   "fieldname": "idempotency_key",
+   "fieldtype": "Data",
+   "label": "Idempotency Key",
+   "read_only": 1,
+   "unique": 1
+  }
+ ],
+ "modified": "2026-08-15 00:00:00",
+ "modified_by": "Administrator",
+ "module": "ERPNext Data Archiver",
+ "name": "Archive Opening Stock Queue",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Archive Manager"
+  },
+  {
+   "read": 1,
+   "role": "Stock Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

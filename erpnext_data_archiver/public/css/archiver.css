@@ -1,0 +1,461 @@
+/* Navbar indicator */
+.eda-nav-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin: 10px 8px 0;
+	padding: 4px 12px;
+	border-radius: 999px;
+	background: #fff4e5;
+	color: #9a4d00;
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+	border: 1px solid rgba(154, 77, 0, 0.18);
+}
+.eda-nav-pill:hover {
+	background: #ffecd2;
+}
+
+/* Page shell — Desk-native, dense, readable */
+.eda-page {
+	--eda-ink: var(--text-color, #1f272e);
+	--eda-muted: var(--text-muted, #687385);
+	--eda-line: var(--border-color, #dce1e8);
+	--eda-surface: var(--fg-color, #ffffff);
+	--eda-subtle: var(--subtle-fg, #f4f6f8);
+	--eda-accent: var(--primary, #249689);
+	--eda-accent-soft: rgba(36, 150, 137, 0.1);
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 1080px;
+	margin: 0 auto;
+	padding: 4px 12px 48px;
+	color: var(--eda-ink);
+}
+.eda-page *,
+.eda-page *::before,
+.eda-page *::after {
+	box-sizing: border-box;
+}
+
+.eda-muted {
+	color: var(--eda-muted) !important;
+	font-size: 12.5px;
+	line-height: 1.45;
+	margin: 0;
+}
+
+.eda-hero {
+	display: grid;
+	grid-template-columns: minmax(0, 1.5fr) minmax(240px, 1fr);
+	gap: 14px;
+	align-items: stretch;
+	margin: 8px 0 18px;
+}
+.eda-kicker {
+	margin: 0 0 6px;
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	color: var(--eda-muted);
+}
+.eda-hero-title {
+	margin: 0 0 8px;
+	font-size: 1.45rem;
+	line-height: 1.25;
+	font-weight: 700;
+	color: var(--eda-ink);
+	letter-spacing: -0.02em;
+}
+.eda-hero-sub {
+	margin: 0;
+	max-width: 48ch;
+	font-size: 13.5px;
+	line-height: 1.5;
+	color: var(--eda-muted);
+}
+
+.eda-status {
+	display: flex !important;
+	align-items: flex-start;
+	gap: 12px;
+	padding: 14px 16px;
+	border-radius: 12px;
+	border: 1px solid var(--eda-line);
+	background: var(--eda-surface);
+	min-height: 72px;
+}
+.eda-status.is-live {
+	background: #eef8f1;
+	border-color: rgba(36, 150, 137, 0.28);
+}
+.eda-status.is-archive {
+	background: #fff7eb;
+	border-color: rgba(201, 120, 18, 0.32);
+}
+.eda-pulse {
+	width: 10px;
+	height: 10px;
+	margin-top: 5px;
+	border-radius: 50%;
+	flex: 0 0 auto;
+	background: #249689;
+	box-shadow: 0 0 0 4px rgba(36, 150, 137, 0.16);
+}
+.eda-status.is-archive .eda-pulse {
+	background: #d97706;
+	box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.16);
+}
+.eda-status strong {
+	display: block;
+	font-size: 13.5px;
+	font-weight: 700;
+	color: var(--eda-ink);
+}
+.eda-status-detail {
+	margin-top: 3px;
+	font-size: 12.5px;
+	line-height: 1.4;
+	color: var(--eda-muted);
+}
+
+.eda-grid {
+	display: grid !important;
+	grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+	gap: 14px;
+	margin-bottom: 14px;
+	align-items: start;
+}
+
+.eda-panel {
+	display: block;
+	background: var(--eda-surface) !important;
+	border: 1px solid var(--eda-line) !important;
+	border-radius: 14px !important;
+	padding: 16px 18px !important;
+	box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+.eda-panel-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 14px;
+}
+.eda-panel-head h3 {
+	margin: 0;
+	font-size: 14px;
+	font-weight: 700;
+	color: var(--eda-ink);
+}
+.eda-panel-head .eda-muted {
+	margin-top: 4px;
+}
+
+.eda-count-chip {
+	display: inline-flex;
+	align-items: center;
+	font-size: 11px;
+	font-weight: 650;
+	padding: 4px 9px;
+	border-radius: 999px;
+	background: var(--eda-subtle);
+	color: var(--eda-muted);
+	border: 1px solid var(--eda-line);
+	white-space: nowrap;
+}
+
+.eda-years {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 8px;
+}
+
+.eda-year {
+	position: relative;
+	display: flex !important;
+	align-items: center;
+	gap: 12px;
+	margin: 0 !important;
+	padding: 12px 14px !important;
+	border-radius: 11px;
+	border: 1px solid var(--eda-line);
+	background: var(--eda-subtle);
+	cursor: pointer;
+	transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+}
+.eda-year:hover {
+	border-color: rgba(36, 150, 137, 0.45);
+	box-shadow: 0 1px 0 rgba(16, 24, 40, 0.04);
+}
+.eda-year.is-on {
+	background: var(--eda-accent-soft);
+	border-color: rgba(36, 150, 137, 0.55);
+}
+.eda-year-input {
+	position: absolute;
+	opacity: 0;
+	pointer-events: none;
+}
+.eda-year-check {
+	width: 20px;
+	height: 20px;
+	border-radius: 6px;
+	border: 1.5px solid rgba(31, 39, 46, 0.28);
+	background: #fff;
+	flex: 0 0 auto;
+	position: relative;
+}
+.eda-year.is-on .eda-year-check {
+	background: var(--eda-accent);
+	border-color: var(--eda-accent);
+}
+.eda-year.is-on .eda-year-check::after {
+	content: "";
+	position: absolute;
+	left: 6px;
+	top: 2px;
+	width: 5px;
+	height: 10px;
+	border: solid #fff;
+	border-width: 0 2px 2px 0;
+	transform: rotate(45deg);
+}
+.eda-year-body {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+	flex: 1;
+}
+.eda-year-name {
+	display: block;
+	font-size: 1.15rem;
+	font-weight: 750;
+	letter-spacing: -0.03em;
+	color: var(--eda-ink);
+	line-height: 1.15;
+}
+.eda-year-rows {
+	display: block;
+	font-size: 12px;
+	color: var(--eda-muted);
+}
+
+.eda-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 14px;
+	padding-top: 14px;
+	border-top: 1px solid var(--eda-line);
+}
+.eda-toolbar .btn {
+	border-radius: 8px !important;
+	font-weight: 650;
+}
+
+.eda-op-meta {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-bottom: 4px;
+}
+.eda-last-run {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	justify-content: flex-end;
+}
+.eda-op-cards {
+	display: grid;
+	gap: 8px;
+	margin-top: 12px;
+}
+.eda-op-card {
+	display: flex !important;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	width: 100%;
+	text-align: left;
+	padding: 12px 14px !important;
+	border-radius: 11px !important;
+	border: 1px solid var(--eda-line) !important;
+	background: var(--eda-subtle) !important;
+	cursor: pointer;
+	transition: border-color 0.12s ease, background 0.12s ease;
+}
+.eda-op-card:hover {
+	background: #fff !important;
+	border-color: rgba(36, 150, 137, 0.4) !important;
+}
+.eda-op-copy {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+.eda-op-title {
+	display: block !important;
+	font-size: 13.5px;
+	font-weight: 700;
+	color: var(--eda-ink);
+	line-height: 1.3;
+}
+.eda-op-desc {
+	display: block !important;
+	font-size: 12px;
+	color: var(--eda-muted);
+	line-height: 1.4;
+}
+.eda-op-chevron {
+	flex: 0 0 auto;
+	width: 18px;
+	height: 18px;
+	opacity: 0.45;
+	background: no-repeat center / 14px 14px
+		url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23687385' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3l5 5-5 5'/%3E%3C/svg%3E");
+}
+
+.eda-badge {
+	display: inline-flex !important;
+	align-items: center;
+	padding: 3px 8px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 700;
+	line-height: 1.2;
+}
+.eda-badge.is-ok {
+	background: #e4f5e9;
+	color: #176b3a;
+}
+.eda-badge.is-warn {
+	background: #fff4e5;
+	color: #9a4d00;
+}
+.eda-run-id {
+	display: inline-block;
+	font-size: 11.5px;
+	color: var(--eda-muted);
+	background: transparent !important;
+	padding: 0 !important;
+	border: 0 !important;
+}
+
+.eda-foot-tools {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+}
+.eda-toggle {
+	display: inline-flex !important;
+	align-items: center;
+	gap: 6px;
+	margin: 0 !important;
+	font-size: 12px;
+	color: var(--eda-muted);
+	cursor: pointer;
+	user-select: none;
+	font-weight: 500;
+}
+.eda-toggle input {
+	margin: 0;
+}
+
+.eda-bars {
+	display: flex;
+	flex-direction: column;
+	gap: 11px;
+}
+.eda-bar-row {
+	display: grid !important;
+	grid-template-columns: minmax(140px, 200px) minmax(0, 1fr) 72px;
+	gap: 12px;
+	align-items: center;
+}
+.eda-bar-label {
+	font-size: 13px;
+	color: var(--eda-ink);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.eda-bar-track {
+	display: block !important;
+	height: 9px !important;
+	min-height: 9px;
+	border-radius: 999px;
+	background: var(--eda-subtle) !important;
+	border: 1px solid var(--eda-line);
+	overflow: hidden;
+}
+.eda-bar-fill {
+	display: block !important;
+	height: 100% !important;
+	min-height: 7px;
+	border-radius: inherit;
+	background: linear-gradient(90deg, #1f8a7e, #2bb3a3);
+	min-width: 4px;
+}
+.eda-bar-value {
+	font-size: 12.5px;
+	font-variant-numeric: tabular-nums;
+	font-weight: 650;
+	text-align: right;
+	color: var(--eda-ink);
+}
+.eda-bar-row.is-zero .eda-bar-label,
+.eda-bar-row.is-zero .eda-bar-value {
+	color: var(--eda-muted);
+}
+.eda-bar-note {
+	padding-top: 2px;
+	font-size: 12px;
+}
+
+.eda-empty {
+	padding: 22px 16px;
+	border: 1px dashed var(--eda-line);
+	border-radius: 12px;
+	text-align: center;
+	background: var(--eda-subtle);
+}
+.eda-empty-title {
+	font-weight: 700;
+	margin-bottom: 4px;
+	color: var(--eda-ink);
+}
+
+@media (max-width: 900px) {
+	.eda-hero,
+	.eda-grid {
+		grid-template-columns: 1fr !important;
+	}
+	.eda-last-run {
+		justify-content: flex-start;
+	}
+	.eda-bar-row {
+		grid-template-columns: 1fr 64px !important;
+		grid-template-areas:
+			"label value"
+			"track track";
+		gap: 6px 10px;
+	}
+	.eda-bar-label {
+		grid-area: label;
+	}
+	.eda-bar-value {
+		grid-area: value;
+	}
+	.eda-bar-track {
+		grid-area: track;
+	}
+}

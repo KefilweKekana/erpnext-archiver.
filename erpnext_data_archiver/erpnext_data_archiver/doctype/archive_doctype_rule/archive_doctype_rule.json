@@ -1,0 +1,78 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-08-14 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "doctype_name",
+  "date_field",
+  "closed_only",
+  "closed_condition",
+  "archive_children",
+  "archive_cancelled"
+ ],
+ "fields": [
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "doctype_name",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "DocType",
+   "options": "DocType",
+   "reqd": 1
+  },
+  {
+   "description": "Date column used for the archive cutoff, e.g. posting_date or transaction_date.",
+   "fieldname": "date_field",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Date Field",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Only archive closed documents (e.g. fully paid invoices, completed orders). Open documents stay live.",
+   "fieldname": "closed_only",
+   "fieldtype": "Check",
+   "label": "Closed Only"
+  },
+  {
+   "description": "Optional SQL condition overriding the built-in closed condition, e.g. `outstanding_amount` = 0",
+   "fieldname": "closed_condition",
+   "fieldtype": "Data",
+   "label": "Closed Condition"
+  },
+  {
+   "default": "1",
+   "description": "Also archive all child tables of this DocType.",
+   "fieldname": "archive_children",
+   "fieldtype": "Check",
+   "label": "Archive Child Tables"
+  },
+  {
+   "default": "1",
+   "fieldname": "archive_cancelled",
+   "fieldtype": "Check",
+   "label": "Archive Cancelled"
+  }
+ ],
+ "istable": 1,
+ "modified": "2026-08-14 00:00:00",
+ "modified_by": "Administrator",
+ "module": "ERPNext Data Archiver",
+ "name": "Archive DocType Rule",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

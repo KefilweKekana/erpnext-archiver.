@@ -1,0 +1,170 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:EDA-RUN-{YYYY}-{#####}",
+ "creation": "2026-08-14 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "status",
+  "cutoff_date",
+  "schema_version",
+  "column_break_meta",
+  "started_on",
+  "completed_on",
+  "backup_id",
+  "backup_checksum",
+  "section_break_error",
+  "error",
+  "section_break_reports",
+  "preflight_report",
+  "opening_state_summary",
+  "reconciliation_report",
+  "section_break_details",
+  "details",
+  "section_break_batches",
+  "batches"
+ ],
+ "fields": [
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nValidating\nSnapshotting\nMoving\nReconciling\nCompleted\nFailed\nRecovering\nIn Progress",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cutoff_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Cutoff Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "schema_version",
+   "fieldtype": "Data",
+   "label": "Schema Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_meta",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "started_on",
+   "fieldtype": "Datetime",
+   "label": "Started On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completed_on",
+   "fieldtype": "Datetime",
+   "label": "Completed On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "backup_id",
+   "fieldtype": "Data",
+   "label": "Backup ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "backup_checksum",
+   "fieldtype": "Data",
+   "label": "Backup Checksum",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_error",
+   "fieldtype": "Section Break",
+   "label": "Error"
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Code",
+   "label": "Error",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_reports",
+   "fieldtype": "Section Break",
+   "label": "Evidence"
+  },
+  {
+   "fieldname": "preflight_report",
+   "fieldtype": "Code",
+   "label": "Preflight Report",
+   "read_only": 1
+  },
+  {
+   "fieldname": "opening_state_summary",
+   "fieldtype": "Code",
+   "label": "Opening State Summary",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reconciliation_report",
+   "fieldtype": "Code",
+   "label": "Reconciliation Report",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_details",
+   "fieldtype": "Section Break",
+   "label": "Archived Rows"
+  },
+  {
+   "fieldname": "details",
+   "fieldtype": "Table",
+   "label": "Details",
+   "options": "Archive Run Detail",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_batches",
+   "fieldtype": "Section Break",
+   "label": "Batch Journal"
+  },
+  {
+   "fieldname": "batches",
+   "fieldtype": "Table",
+   "label": "Batches",
+   "options": "Archive Run Batch",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-08-15 00:00:00",
+ "modified_by": "Administrator",
+ "module": "ERPNext Data Archiver",
+ "name": "Archive Run",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Archive Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

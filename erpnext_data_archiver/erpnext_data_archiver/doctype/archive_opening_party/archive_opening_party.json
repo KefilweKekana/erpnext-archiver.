@@ -1,0 +1,145 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-08-15 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "cutoff_date",
+  "company",
+  "party_type",
+  "party",
+  "voucher_type",
+  "voucher_no",
+  "against_voucher_type",
+  "against_voucher",
+  "account",
+  "due_date",
+  "outstanding",
+  "is_synthetic",
+  "archive_run",
+  "idempotency_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "cutoff_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Cutoff Date",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Company",
+   "options": "Company",
+   "read_only": 1
+  },
+  {
+   "fieldname": "party_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Party Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "party",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Party",
+   "read_only": 1
+  },
+  {
+   "fieldname": "voucher_type",
+   "fieldtype": "Data",
+   "label": "Voucher Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "voucher_no",
+   "fieldtype": "Data",
+   "label": "Voucher No",
+   "read_only": 1
+  },
+  {
+   "fieldname": "against_voucher_type",
+   "fieldtype": "Data",
+   "label": "Against Voucher Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "against_voucher",
+   "fieldtype": "Data",
+   "label": "Against Voucher",
+   "read_only": 1
+  },
+  {
+   "fieldname": "account",
+   "fieldtype": "Data",
+   "label": "Account",
+   "read_only": 1
+  },
+  {
+   "fieldname": "due_date",
+   "fieldtype": "Date",
+   "label": "Due Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "outstanding",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Outstanding",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_synthetic",
+   "fieldtype": "Check",
+   "label": "Synthetic Opening",
+   "read_only": 1
+  },
+  {
+   "fieldname": "archive_run",
+   "fieldtype": "Link",
+   "label": "Archive Run",
+   "options": "Archive Run",
+   "read_only": 1
+  },
+  {
+   "fieldname": "idempotency_key",
+   "fieldtype": "Data",
+   "label": "Idempotency Key",
+   "read_only": 1,
+   "unique": 1
+  }
+ ],
+ "modified": "2026-08-15 00:00:00",
+ "modified_by": "Administrator",
+ "module": "ERPNext Data Archiver",
+ "name": "Archive Opening Party",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Archive Manager"
+  },
+  {
+   "read": 1,
+   "role": "Accounts Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

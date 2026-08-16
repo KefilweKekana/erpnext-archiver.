@@ -1,0 +1,70 @@
+{
+ "actions": [],
+ "creation": "2026-08-15 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "doctype_name",
+  "batch_index",
+  "expected_count",
+  "actual_count",
+  "expected_checksum",
+  "actual_checksum",
+  "status"
+ ],
+ "fields": [
+  {
+   "fieldname": "doctype_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "DocType",
+   "reqd": 1
+  },
+  {
+   "fieldname": "batch_index",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Batch Index"
+  },
+  {
+   "fieldname": "expected_count",
+   "fieldtype": "Int",
+   "label": "Expected Count"
+  },
+  {
+   "fieldname": "actual_count",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Actual Count"
+  },
+  {
+   "fieldname": "expected_checksum",
+   "fieldtype": "Data",
+   "label": "Expected Checksum"
+  },
+  {
+   "fieldname": "actual_checksum",
+   "fieldtype": "Small Text",
+   "label": "Actual Checksum"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Pending\nCommitted\nFailed"
+  }
+ ],
+ "istable": 1,
+ "modified": "2026-08-15 00:00:00",
+ "modified_by": "Administrator",
+ "module": "ERPNext Data Archiver",
+ "name": "Archive Run Batch",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

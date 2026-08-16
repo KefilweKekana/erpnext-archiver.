@@ -1,0 +1,29 @@
+{
+ "creation": "2026-08-14 00:00:00",
+ "docstatus": 0,
+ "doctype": "Page",
+ "idx": 0,
+ "modified": "2026-08-14 00:00:00",
+ "modified_by": "Administrator",
+ "module": "ERPNext Data Archiver",
+ "name": "archive-retrieval",
+ "owner": "Administrator",
+ "page_name": "archive-retrieval",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Archive Manager"
+  },
+  {
+   "role": "Accounts Manager"
+  },
+  {
+   "role": "Stock Manager"
+  }
+ ],
+ "standard": "Yes",
+ "system_page": 0,
+ "title": "Retrieve Archived Data"
+}

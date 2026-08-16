@@ -1,0 +1,25 @@
+[project]
+name = "erpnext_data_archiver"
+version = "1.1.0"
+description = "Dagaar-aligned fiscal-year data archiving for ERPNext (v14-v16): opening-state hot paths, journaled archive, reconciliation."
+authors = [
+    { name = "Hiraal", email = "info@hiraalhealth.so" }
+]
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["erpnext_data_archiver*"]
+
+[tool.pytest.ini_options]
+testpaths = ["erpnext_data_archiver/tests"]
+pythonpath = ["."]
