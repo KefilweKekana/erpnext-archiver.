@@ -5,6 +5,8 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 		single_column: true,
 	});
 
+	ensure_eda_stylesheet();
+
 	const state = { data: null, show_zero: false };
 	const $main = $(page.main);
 
@@ -31,10 +33,10 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 					</div>
 					<div class="eda-years"></div>
 					<div class="eda-toolbar">
-						<button class="btn btn-primary eda-activate" disabled>
+						<button type="button" class="btn btn-primary eda-activate" disabled>
 							${__("Apply to this session")}
 						</button>
-						<button class="btn btn-default eda-deactivate">
+						<button type="button" class="btn btn-default eda-deactivate">
 							${__("Use live data only")}
 						</button>
 					</div>
@@ -54,7 +56,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 						)}
 					</p>
 					<div class="eda-op-cards">
-						<button type="button" class="eda-op-card eda-run">
+						<div role="button" tabindex="0" class="eda-op-card eda-run">
 							<span class="eda-op-copy">
 								<span class="eda-op-title">${__("Run archive")}</span>
 								<span class="eda-op-desc">${__(
@@ -62,14 +64,14 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 								)}</span>
 							</span>
 							<span class="eda-op-chevron" aria-hidden="true"></span>
-						</button>
-						<button type="button" class="eda-op-card eda-restore">
+						</div>
+						<div role="button" tabindex="0" class="eda-op-card eda-restore">
 							<span class="eda-op-copy">
 								<span class="eda-op-title">${__("Restore a year")}</span>
 								<span class="eda-op-desc">${__("Copy one fiscal year back into live data")}</span>
 							</span>
 							<span class="eda-op-chevron" aria-hidden="true"></span>
-						</button>
+						</div>
 					</div>
 				</section>
 			</div>
@@ -94,6 +96,77 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 			</section>
 		</div>
 	`);
+
+	function ensure_eda_stylesheet() {
+		// Always inject layout-critical rules so v15 Desk still looks right
+		// when public assets are missing or not rebuilt yet.
+		if (!document.getElementById("eda-archiver-critical")) {
+			const style = document.createElement("style");
+			style.id = "eda-archiver-critical";
+			style.textContent = `
+.eda-page{--eda-ink:var(--text-color,#1f272e);--eda-muted:var(--text-muted,#687385);--eda-line:var(--border-color,#dce1e8);--eda-surface:var(--fg-color,var(--card-bg,#fff));--eda-subtle:var(--subtle-fg,var(--control-bg,#f4f6f8));--eda-accent:var(--primary,#249689);max-width:1080px;margin:0 auto;padding:4px 12px 48px;color:var(--eda-ink);box-sizing:border-box}
+.eda-page *,.eda-page *::before,.eda-page *::after{box-sizing:border-box}
+.eda-muted{color:var(--eda-muted)!important;font-size:12.5px;line-height:1.45;margin:0}
+.eda-hero{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(240px,1fr);gap:14px;margin:8px 0 18px}
+.eda-kicker{margin:0 0 6px;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--eda-muted)}
+.eda-hero-title{margin:0 0 8px;font-size:1.45rem;line-height:1.25;font-weight:700}
+.eda-hero-sub{margin:0;max-width:48ch;font-size:13.5px;line-height:1.5;color:var(--eda-muted)}
+.eda-status{display:flex!important;align-items:flex-start;gap:12px;padding:14px 16px;border-radius:12px;border:1px solid var(--eda-line);background:var(--eda-surface);min-height:72px}
+.eda-status.is-live{background:#eef8f1;border-color:rgba(36,150,137,.28)}
+.eda-status.is-archive{background:#fff7eb;border-color:rgba(201,120,18,.32)}
+.eda-pulse{width:10px;height:10px;margin-top:5px;border-radius:50%;flex:0 0 auto;background:#249689;box-shadow:0 0 0 4px rgba(36,150,137,.16)}
+.eda-status.is-archive .eda-pulse{background:#d97706;box-shadow:0 0 0 4px rgba(217,119,6,.16)}
+.eda-status strong{display:block;font-size:13.5px;font-weight:700}
+.eda-status-detail{margin-top:3px;font-size:12.5px;color:var(--eda-muted)}
+.eda-grid{display:grid!important;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:14px;margin-bottom:14px}
+.eda-panel{display:block;background:var(--eda-surface)!important;border:1px solid var(--eda-line)!important;border-radius:14px!important;padding:16px 18px!important;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+.eda-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+.eda-panel-head h3{margin:0;font-size:14px;font-weight:700}
+.eda-count-chip{display:inline-flex;align-items:center;font-size:11px;font-weight:650;padding:4px 9px;border-radius:999px;background:var(--eda-subtle);color:var(--eda-muted);border:1px solid var(--eda-line)}
+.eda-years{display:grid;gap:8px}
+.eda-year{display:flex!important;align-items:center;gap:12px;margin:0!important;padding:12px 14px!important;border-radius:11px;border:1px solid var(--eda-line);background:var(--eda-subtle);cursor:pointer}
+.eda-year.is-on{background:rgba(36,150,137,.1);border-color:rgba(36,150,137,.55)}
+.eda-year-input{position:absolute;opacity:0;pointer-events:none}
+.eda-year-check{width:20px;height:20px;border-radius:6px;border:1.5px solid rgba(31,39,46,.28);background:#fff;flex:0 0 auto;position:relative}
+.eda-year.is-on .eda-year-check{background:#249689;border-color:#249689}
+.eda-year.is-on .eda-year-check::after{content:"";position:absolute;left:6px;top:2px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.eda-year-body{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.eda-year-name{font-size:1.15rem;font-weight:750;line-height:1.15}
+.eda-year-rows{font-size:12px;color:var(--eda-muted)}
+.eda-toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--eda-line)}
+.eda-op-cards{display:grid!important;gap:8px;margin-top:12px}
+.eda-op-card{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:space-between!important;gap:12px;width:100%;text-align:left;padding:12px 14px!important;border-radius:11px!important;border:1px solid var(--eda-line)!important;background:var(--eda-subtle)!important;cursor:pointer}
+.eda-op-copy{display:flex!important;flex-direction:column!important;align-items:flex-start!important;gap:2px!important;min-width:0;flex:1}
+.eda-op-title{display:block!important;width:100%;font-size:13.5px!important;font-weight:700!important;line-height:1.3!important}
+.eda-op-desc{display:block!important;width:100%;font-size:12px!important;font-weight:400!important;color:var(--eda-muted)!important;line-height:1.4!important}
+.eda-op-chevron{flex:0 0 auto;width:18px;height:18px;opacity:.45;background:no-repeat center/14px 14px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23687385' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3l5 5-5 5'/%3E%3C/svg%3E")}
+.eda-badge{display:inline-flex!important;align-items:center;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:700}
+.eda-badge.is-ok{background:#e4f5e9;color:#176b3a}
+.eda-badge.is-warn{background:#fff4e5;color:#9a4d00}
+.eda-foot-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
+.eda-toggle{display:inline-flex!important;align-items:center;gap:6px;margin:0!important;font-size:12px;color:var(--eda-muted);cursor:pointer}
+.eda-bars{display:flex;flex-direction:column;gap:11px}
+.eda-bar-row{display:grid!important;grid-template-columns:minmax(140px,200px) minmax(0,1fr) 72px;gap:12px;align-items:center}
+.eda-bar-label{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eda-bar-track{display:block!important;height:9px!important;border-radius:999px;background:var(--eda-subtle)!important;border:1px solid var(--eda-line);overflow:hidden}
+.eda-bar-fill{display:block!important;height:100%!important;border-radius:inherit;background:linear-gradient(90deg,#1f8a7e,#2bb3a3);min-width:4px}
+.eda-bar-value{font-size:12.5px;font-variant-numeric:tabular-nums;font-weight:650;text-align:right}
+.eda-empty{padding:22px 16px;border:1px dashed var(--eda-line);border-radius:12px;text-align:center;background:var(--eda-subtle)}
+.eda-empty-title{font-weight:700;margin-bottom:4px}
+@media (max-width:900px){.eda-hero,.eda-grid{grid-template-columns:1fr!important}.eda-bar-row{grid-template-columns:1fr 64px!important;grid-template-areas:"label value" "track track";gap:6px 10px}.eda-bar-label{grid-area:label}.eda-bar-value{grid-area:value}.eda-bar-track{grid-area:track}}
+`;
+			document.head.appendChild(style);
+		}
+
+		const id = "eda-archiver-css";
+		if (document.getElementById(id)) return;
+		const link = document.createElement("link");
+		link.id = id;
+		link.rel = "stylesheet";
+		link.type = "text/css";
+		link.href = "/assets/erpnext_data_archiver/css/archiver.css?v=1.1.3";
+		document.head.appendChild(link);
+	}
 
 	function cint(v) {
 		const n = parseInt(v, 10);
@@ -282,7 +355,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 		});
 	});
 
-	$main.on("click", ".eda-run", function () {
+	function open_run_dialog() {
 		const years = state.data.archivable_years || [];
 		const phrase = state.data.confirmation_phrase || "ARCHIVE";
 		if (!years.length) {
@@ -365,9 +438,9 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 			d.set_df_property("cutoff_note", "options", cutoff_note_html(d.get_value("fiscal_year")));
 		});
 		d.show();
-	});
+	}
 
-	$main.on("click", ".eda-restore", function () {
+	function open_restore_dialog() {
 		const years = (state.data.archived_years || []).map((y) => y.fiscal_year);
 		if (!years.length) return;
 		const d = new frappe.ui.Dialog({
@@ -418,6 +491,21 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 			},
 		});
 		d.show();
+	}
+
+	$main.on("click", ".eda-run", open_run_dialog);
+	$main.on("keydown", ".eda-run", (e) => {
+		if (e.key === "Enter" || e.key === " ") {
+			e.preventDefault();
+			open_run_dialog();
+		}
+	});
+	$main.on("click", ".eda-restore", open_restore_dialog);
+	$main.on("keydown", ".eda-restore", (e) => {
+		if (e.key === "Enter" || e.key === " ") {
+			e.preventDefault();
+			open_restore_dialog();
+		}
 	});
 
 	frappe.realtime.on("eda_archive_progress", (data) => {

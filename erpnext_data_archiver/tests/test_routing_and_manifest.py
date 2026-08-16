@@ -163,5 +163,57 @@ class TestOpeningKeys(unittest.TestCase):
 		self.assertNotEqual(a, b)
 
 
+class TestApplyTableUnion(unittest.TestCase):
+	"""Regression: aliased FROM/JOIN must not become (subquery) `tabX` alias."""
+
+	def setUp(self):
+		from erpnext_data_archiver.archiver.query_patch import apply_table_union
+
+		self.apply = apply_table_union
+		self.union = "(SELECT `name` FROM `tabSales Order` UNION ALL SELECT `name` FROM `tabSales Order Archive`)"
+
+	def test_keeps_existing_alias(self):
+		q = "SELECT so.name FROM `tabSales Order` so WHERE so.docstatus = 1"
+		out = self.apply(q, "tabSales Order", self.union)
+		self.assertIn(self.union + " so", out)
+		self.assertNotIn(") `tabSales Order` so", out)
+
+	def test_left_join_with_alias(self):
+		q = (
+			"SELECT * FROM `tabSales Order` so "
+			"LEFT JOIN `tabSales Invoice Item` sii ON sii.so_detail = soi.name"
+		)
+		out = self.apply(q, "tabSales Invoice Item", "(SELECT 1)")
+		self.assertIn("LEFT JOIN (SELECT 1) sii ON", out)
+		self.assertNotIn(") `tabSales Invoice Item` sii", out)
+
+	def test_no_alias_uses_table_name(self):
+		q = "SELECT name FROM `tabSales Order` WHERE docstatus = 1"
+		out = self.apply(q, "tabSales Order", self.union)
+		self.assertIn(self.union + " `tabSales Order` WHERE", out)
+
+	def test_does_not_treat_left_as_alias(self):
+		q = "SELECT * FROM `tabSales Order` LEFT JOIN `tabCustomer` c ON c.name = so.customer"
+		out = self.apply(q, "tabSales Order", self.union)
+		self.assertIn(self.union + " `tabSales Order` LEFT JOIN", out)
+
+	def test_comma_join_sales_order_analysis_shape(self):
+		q = (
+			"SELECT so.name FROM\n"
+			"\t\t\t`tabSales Order` so,\n"
+			"\t\t\t`tabSales Order Item` soi\n"
+			"\t\tWHERE soi.parent = so.name"
+		)
+		# Pattern requires FROM/JOIN immediately before table — ERPNext puts
+		# newline between FROM and table; ensure we still match via FROM\s+.
+		q2 = (
+			"SELECT so.name FROM `tabSales Order` so, `tabSales Order Item` soi "
+			"WHERE soi.parent = so.name"
+		)
+		out = self.apply(q2, "tabSales Order", self.union)
+		self.assertIn(self.union + " so,", out)
+		self.assertNotIn("`tabSales Order` so", out.split(self.union, 1)[-1][:40])
+
+
 if __name__ == "__main__":
 	unittest.main()

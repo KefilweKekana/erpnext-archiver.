@@ -17,13 +17,14 @@
 	background: #ffecd2;
 }
 
-/* Page shell — Desk-native, dense, readable */
+/* Page shell — Desk-native, dense, readable (v14–v16) */
 .eda-page {
 	--eda-ink: var(--text-color, #1f272e);
 	--eda-muted: var(--text-muted, #687385);
 	--eda-line: var(--border-color, #dce1e8);
-	--eda-surface: var(--fg-color, #ffffff);
-	--eda-subtle: var(--subtle-fg, #f4f6f8);
+	/* v15 Desk often uses --card-bg / --control-bg instead of --fg-color */
+	--eda-surface: var(--fg-color, var(--card-bg, #ffffff));
+	--eda-subtle: var(--subtle-fg, var(--control-bg, #f4f6f8));
 	--eda-accent: var(--primary, #249689);
 	--eda-accent-soft: rgba(36, 150, 137, 0.1);
 	box-sizing: border-box;
@@ -32,6 +33,7 @@
 	margin: 0 auto;
 	padding: 4px 12px 48px;
 	color: var(--eda-ink);
+	font-family: var(--font-stack, inherit);
 }
 .eda-page *,
 .eda-page *::before,
@@ -271,15 +273,16 @@
 	justify-content: flex-end;
 }
 .eda-op-cards {
-	display: grid;
+	display: grid !important;
 	gap: 8px;
 	margin-top: 12px;
 }
+/* Use div cards — native <button> styling on Desk flattens nested spans */
 .eda-op-card {
 	display: flex !important;
-	flex-direction: row;
-	align-items: center;
-	justify-content: space-between;
+	flex-direction: row !important;
+	align-items: center !important;
+	justify-content: space-between !important;
 	gap: 12px;
 	width: 100%;
 	text-align: left;
@@ -288,30 +291,46 @@
 	border: 1px solid var(--eda-line) !important;
 	background: var(--eda-subtle) !important;
 	cursor: pointer;
+	appearance: none;
+	-webkit-appearance: none;
+	font: inherit;
+	color: inherit;
+	line-height: normal;
 	transition: border-color 0.12s ease, background 0.12s ease;
 }
 .eda-op-card:hover {
-	background: #fff !important;
+	background: var(--eda-surface) !important;
 	border-color: rgba(36, 150, 137, 0.4) !important;
 }
+.eda-op-card:focus-visible {
+	outline: 2px solid var(--eda-accent);
+	outline-offset: 2px;
+}
 .eda-op-copy {
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
+	display: flex !important;
+	flex-direction: column !important;
+	align-items: flex-start !important;
+	gap: 2px !important;
 	min-width: 0;
+	flex: 1 1 auto;
 }
 .eda-op-title {
 	display: block !important;
-	font-size: 13.5px;
-	font-weight: 700;
-	color: var(--eda-ink);
-	line-height: 1.3;
+	width: 100%;
+	font-size: 13.5px !important;
+	font-weight: 700 !important;
+	color: var(--eda-ink) !important;
+	line-height: 1.3 !important;
+	white-space: normal !important;
 }
 .eda-op-desc {
 	display: block !important;
-	font-size: 12px;
-	color: var(--eda-muted);
-	line-height: 1.4;
+	width: 100%;
+	font-size: 12px !important;
+	font-weight: 400 !important;
+	color: var(--eda-muted) !important;
+	line-height: 1.4 !important;
+	white-space: normal !important;
 }
 .eda-op-chevron {
 	flex: 0 0 auto;

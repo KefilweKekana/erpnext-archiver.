@@ -16,14 +16,18 @@ process. The wrapper is deliberately conservative:
 
 The rewrite turns::
 
-    FROM `tabGL Entry` ...
+    FROM `tabGL Entry` ge ...
 
 into::
 
     FROM (SELECT <live cols> FROM `tabGL Entry`
           UNION ALL
           SELECT <live cols> FROM `tabGL Entry Archive`
-          WHERE `fiscal_year_archived` IN (...)) `tabGL Entry` ...
+          WHERE `fiscal_year_archived` IN (...)) ge ...
+
+If the original table has no alias, the subquery is aliased as `` `tabGL Entry` ``
+so later references still resolve. Never emit both the table name and a second
+alias after the subquery (invalid MariaDB syntax).
 
 Archive tables are exact structural copies of the live tables plus three
 metadata columns, and are indexed on (fiscal_year_archived, posting date), so
@@ -50,7 +54,16 @@ _RESOLVING = threading.local()
 # Matches FROM/JOIN followed by a backticked table name; the table name is
 # filled in per archivable table. Negative lookahead guards against rewriting
 # references that already point at the archive table.
-_FROM_JOIN_TEMPLATE = r"((?:FROM|JOIN)\s+)`{table}`(?!\s*Archive`)"
+# Optional alias (AS name / name) is captured so we do not emit
+# "(subquery) `tabX` alias" which MariaDB rejects.
+_SQL_NEXT_KEYWORDS = (
+	"WHERE|LEFT|RIGHT|INNER|OUTER|CROSS|JOIN|ON|GROUP|ORDER|LIMIT|HAVING|"
+	"UNION|SET|FORCE|USE|IGNORE|NATURAL|PARTITION|INTO|FOR|LOCK|RETURNING"
+)
+_FROM_JOIN_TEMPLATE = (
+	r"((?:FROM|JOIN)\s+)`{table}`(?!\s*Archive`)"
+	r"(?:\s+(?:AS\s+)?(?!(?:{keywords})\b)(`[^`]+`|[A-Za-z_][\w]*))?"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -336,72 +349,102 @@ def _raw_sql(query, values=()):
 # Rewrite
 # ---------------------------------------------------------------------------
 
+def apply_table_union(query: str, live: str, union_sql: str) -> str:
+	"""Replace FROM/JOIN `live` with a UNION subquery + a single alias.
+
+	- ``FROM `tabX` alias`` -> ``FROM (union) alias``
+	- ``FROM `tabX``        -> ``FROM (union) `tabX```
+	"""
+	pattern = re.compile(
+		_FROM_JOIN_TEMPLATE.format(
+			table=re.escape(live),
+			keywords=_SQL_NEXT_KEYWORDS,
+		),
+		re.IGNORECASE,
+	)
+
+	def repl(m: re.Match) -> str:
+		prefix = m.group(1)  # "FROM " / "JOIN " including whitespace
+		alias = m.group(2)
+		if alias:
+			return f"{prefix}{union_sql} {alias}"
+		return f"{prefix}{union_sql} `{live}`"
+
+	return pattern.sub(repl, query)
+
+
 def maybe_rewrite(db, query):
-    """Return the rewritten query, or None if it must pass through untouched."""
-    if not isinstance(query, str):
-        return None
+	"""Return the rewritten query, or None if it must pass through untouched."""
+	if not isinstance(query, str):
+		return None
 
-    # Re-entrancy guard (metadata lookups run SQL themselves).
-    if getattr(_RESOLVING, "active", False):
-        return None
+	# Re-entrancy guard (metadata lookups run SQL themselves).
+	if getattr(_RESOLVING, "active", False):
+		return None
 
-    # Never rewrite while the engine itself is copying/restoring data.
-    if frappe.flags.get("archiver_bypass"):
-        return None
+	# Never rewrite while the engine itself is copying/restoring data.
+	if frappe.flags.get("archiver_bypass"):
+		return None
 
-    head = query.lstrip()[:6].upper()
-    if not (head.startswith("SELECT") or head.startswith("WITH") or head.startswith("(")):
-        return None
+	head = query.lstrip()[:6].upper()
+	if not (head.startswith("SELECT") or head.startswith("WITH") or head.startswith("(")):
+		return None
 
-    # Only act on sites that actually have the app installed.
-    if not _app_active():
-        return None
+	# Only act on sites that actually have the app installed.
+	if not _app_active():
+		return None
 
-    years = resolve_active_years()
-    if not years:
-        return None
+	years = resolve_active_years()
+	if not years:
+		return None
 
-    tables = get_archivable_tables()
-    if not tables:
-        return None
+	tables = get_archivable_tables()
+	if not tables:
+		return None
 
-    rewritten = query
-    for live, archive in tables.items():
-        if "`" + live + "`" not in rewritten:
-            continue
-        pattern = _FROM_JOIN_TEMPLATE.format(table=re.escape(live))
-        if not re.search(pattern, rewritten):
-            continue
-        cols = get_table_columns(live)
-        if not cols:
-            continue
-        # When archives are UNIONed in, exclude synthetic opening GL/SLE so history
-        # is not double-counted against Archive Opening voucher rows.
-        live_from = "`{live}`".format(live=live)
-        if live in ("tabGL Entry", "tabStock Ledger Entry") and "voucher_type" in cols:
-            live_from = (
-                "(SELECT {cols} FROM `{live}`"
-                " WHERE IFNULL(`voucher_type`, '') != 'Archive Opening')"
-            ).format(cols=", ".join("`%s`" % c for c in cols), live=live)
-        col_sql = ", ".join("`%s`" % c for c in cols)
-        if years == ALL_YEARS:
-            where = ""
-        else:
-            escaped = ", ".join(_escape(db, y) for y in years)
-            where = " WHERE `fiscal_year_archived` IN (%s)" % escaped
-        if live in ("tabGL Entry", "tabStock Ledger Entry") and "voucher_type" in cols:
-            union = (
-                "({live_from} UNION ALL "
-                "SELECT {cols} FROM `{archive}`{where})"
-            ).format(live_from=live_from, cols=col_sql, archive=archive, where=where)
-        else:
-            union = (
-                "(SELECT {cols} FROM `{live}` UNION ALL "
-                "SELECT {cols} FROM `{archive}`{where})"
-            ).format(cols=col_sql, live=live, archive=archive, where=where)
-        rewritten = re.sub(pattern, lambda m: m.group(1) + union + " `" + live + "`", rewritten)
+	rewritten = query
+	for live, archive in tables.items():
+		if "`" + live + "`" not in rewritten:
+			continue
+		probe = re.compile(
+			_FROM_JOIN_TEMPLATE.format(
+				table=re.escape(live),
+				keywords=_SQL_NEXT_KEYWORDS,
+			),
+			re.IGNORECASE,
+		)
+		if not probe.search(rewritten):
+			continue
+		cols = get_table_columns(live)
+		if not cols:
+			continue
+		# When archives are UNIONed in, exclude synthetic opening GL/SLE so history
+		# is not double-counted against Archive Opening voucher rows.
+		live_from = "`{live}`".format(live=live)
+		if live in ("tabGL Entry", "tabStock Ledger Entry") and "voucher_type" in cols:
+			live_from = (
+				"(SELECT {cols} FROM `{live}`"
+				" WHERE IFNULL(`voucher_type`, '') != 'Archive Opening')"
+			).format(cols=", ".join("`%s`" % c for c in cols), live=live)
+		col_sql = ", ".join("`%s`" % c for c in cols)
+		if years == ALL_YEARS:
+			where = ""
+		else:
+			escaped = ", ".join(_escape(db, y) for y in years)
+			where = " WHERE `fiscal_year_archived` IN (%s)" % escaped
+		if live in ("tabGL Entry", "tabStock Ledger Entry") and "voucher_type" in cols:
+			union = (
+				"({live_from} UNION ALL "
+				"SELECT {cols} FROM `{archive}`{where})"
+			).format(live_from=live_from, cols=col_sql, archive=archive, where=where)
+		else:
+			union = (
+				"(SELECT {cols} FROM `{live}` UNION ALL "
+				"SELECT {cols} FROM `{archive}`{where})"
+			).format(cols=col_sql, live=live, archive=archive, where=where)
+		rewritten = apply_table_union(rewritten, live, union)
 
-    return rewritten if rewritten != query else None
+	return rewritten if rewritten != query else None
 
 
 def _escape(db, value):

@@ -9,7 +9,10 @@ cp "$SRC/erpnext_data_archiver/erpnext_data_archiver/page/archive_retrieval/arch
   "$MOD/page/archive_retrieval/archive_retrieval.js"
 cp "$SRC/erpnext_data_archiver/api.py" "$APP/api.py"
 cp "$SRC/erpnext_data_archiver/hooks.py" "$APP/hooks.py"
+# Page JS also injects critical layout styles if assets are missing.
 cp "$SRC/erpnext_data_archiver/public/css/archiver.css" "$APP/public/css/archiver.css"
+cp "$SRC/erpnext_data_archiver/public/css/erpnext_data_archiver.bundle.css" \
+  "$APP/public/css/erpnext_data_archiver.bundle.css"
 cp "$SRC/erpnext_data_archiver/archiver/fiscal.py" "$APP/archiver/fiscal.py"
 cp "$SRC/erpnext_data_archiver/archiver/engine.py" "$APP/archiver/engine.py"
 cp "$SRC/erpnext_data_archiver/archiver/preflight.py" "$APP/archiver/preflight.py"

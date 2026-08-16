@@ -27,8 +27,13 @@ scheduler_events = {
 }
 
 # ---------- Web Include (Desk) ----------
+# Bundle path works with Frappe v15+ esbuild; plain asset path covers v14 and
+# sites that have not rebuilt yet. Page JS also injects the stylesheet.
 app_include_js = "/assets/erpnext_data_archiver/js/archive_indicator.js"
-app_include_css = "/assets/erpnext_data_archiver/css/archiver.css?v=1.1.2"
+app_include_css = [
+	"erpnext_data_archiver.bundle.css",
+	"/assets/erpnext_data_archiver/css/archiver.css?v=1.1.3",
+]
 
 # ---------------------------------------------------------------------------
 # Install the transparent query-rewrite layer and the report wrappers.
