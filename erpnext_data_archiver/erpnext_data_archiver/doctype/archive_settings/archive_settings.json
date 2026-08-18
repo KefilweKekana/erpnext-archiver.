@@ -8,9 +8,11 @@
   "enabled",
   "auto_archive",
   "require_backup_before_archive",
+  "monthly_in_current_year",
   "column_break_main",
   "batch_size",
   "archive_through_year",
+  "archive_through_month",
   "cutoff_date",
   "section_break_backup",
   "last_backup_id",
@@ -31,10 +33,17 @@
   },
   {
    "default": "0",
-   "description": "Automatically archive data older than the current fiscal year once per day (background job).",
+   "description": "Automatically archive data older than the current fiscal year once per day (background job). With monthly archive on, also archives the last completed month.",
    "fieldname": "auto_archive",
    "fieldtype": "Check",
    "label": "Auto Archive Daily"
+  },
+  {
+   "default": "0",
+   "description": "Optional. Also move closed months of the current fiscal year out of live tables. The current month always stays live. For retail and other sites with a huge GL during the open year. Unpaid invoices still stay live.",
+   "fieldname": "monthly_in_current_year",
+   "fieldtype": "Check",
+   "label": "Archive Closed Months of Current Year"
   },
   {
    "default": "1",
@@ -55,10 +64,17 @@
    "label": "Batch Size"
   },
   {
-   "description": "Pick the last closed fiscal year to move out of live tables (e.g. 2025). Everything through the end of that year is archived; the current year stays live. This sets the cutoff date automatically.",
+   "description": "Pick the last closed fiscal year to move out of live tables (e.g. 2025). Everything through the end of that year is archived. This sets the cutoff date automatically.",
    "fieldname": "archive_through_year",
    "fieldtype": "Data",
    "label": "Archive Through Fiscal Year"
+  },
+  {
+   "depends_on": "eval:doc.monthly_in_current_year",
+   "description": "Last completed month to archive in the current fiscal year (YYYY-MM). The current month is never archived. Example: 2026-07 archives January–July and leaves August live.",
+   "fieldname": "archive_through_month",
+   "fieldtype": "Data",
+   "label": "Archive Through Month"
   },
   {
    "description": "Advanced: only rows before this date are archived. Usually filled from Archive Through Fiscal Year. Leave empty to auto-use the start of the current fiscal year.",
@@ -117,7 +133,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-15 20:50:00",
+ "modified": "2026-08-19 00:00:00",
  "modified_by": "Administrator",
  "module": "ERPNext Data Archiver",
  "name": "Archive Settings",

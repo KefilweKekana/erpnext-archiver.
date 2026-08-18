@@ -87,6 +87,12 @@ def ensure_mariadb():
 
 
 def compute_cutoff_date(settings=None):
+	settings = settings or get_settings()
+	if cint(getattr(settings, "monthly_in_current_year", 0)):
+		month = getattr(settings, "archive_through_month", None)
+		if month:
+			return fiscal.cutoff_after_month(month)
+		return fiscal.first_of_current_month()
 	return fiscal.current_fy_start()
 
 
@@ -277,6 +283,7 @@ def run_archive(
 		frappe.throw("Archiving is disabled in Archive Settings.")
 
 	cutoff = getdate(settings.cutoff_date) if settings.cutoff_date else compute_cutoff_date(settings)
+	_refuse_if_already_archived(settings)
 	batch_size = cint(settings.batch_size) or 2000
 	# Keep one lock token for the whole job — never swap owner mid-run (release would miss).
 	lock_owner = frappe.generate_hash(length=12)
@@ -460,8 +467,10 @@ def _archive_doctype(rule, doctype, cutoff, batch_size, run_name, parent_names=N
 				where.append("IFNULL(`voucher_type`, '') != 'Archive Opening'")
 			if doctype == "Stock Ledger Entry" and _column_exists(live, "voucher_type"):
 				where.append("IFNULL(`voucher_type`, '') != 'Archive Opening'")
-			# Never delete into any company's still-open FY (multi-company calendars)
-			if _column_exists(live, "company"):
+			# Closed-year mode: never delete into any company's still-open FY.
+			# Monthly mode: cutoff is already capped at the first of the current month.
+			monthly = cint(getattr(get_settings(), "monthly_in_current_year", 0))
+			if not monthly and _column_exists(live, "company"):
 				co_starts = fiscal.company_fy_starts()
 				if co_starts:
 					parts = []
@@ -469,7 +478,6 @@ def _archive_doctype(rule, doctype, cutoff, batch_size, run_name, parent_names=N
 					for company, start in co_starts.items():
 						parts.append(f"(`company` = %s AND `{date_field}` < %s)")
 						vals_extra.extend([company, start])
-					# Companies without a resolved FY still use global cutoff
 					parts.append("(`company` IS NULL OR `company` NOT IN (" + ", ".join(["%s"] * len(co_starts)) + "))")
 					vals_extra.extend(list(co_starts.keys()))
 					where.append("(" + " OR ".join(parts) + ")")
@@ -528,12 +536,26 @@ def _archive_doctype(rule, doctype, cutoff, batch_size, run_name, parent_names=N
 		day_before = add_days(getdate(cutoff), -1)
 		fallback_fy = fiscal.fiscal_year_for_date(day_before) or str(day_before.year)
 
+		parent_arch = None
+		parent_key = "parent"
+		insert_params = [run_name]
+		if is_child:
+			parent_arch = archive_table_name(parent_doctype or rule.doctype_name)
+			parent_key = parent_field_for_child(parent_doctype or rule.doctype_name, doctype) or "parent"
+			if _table_exists(parent_arch) and _column_exists(live, parent_key):
+				# Children follow the parent document's year, not the child's creation date.
+				fy_subquery = (
+					f"COALESCE((SELECT p.`fiscal_year_archived` FROM `{parent_arch}` p"
+					f" WHERE p.`name` = `{live}`.`{parent_key}` LIMIT 1), %s)"
+				)
+				insert_params.append(fallback_fy)
+
 		frappe.db.sql(
 			f"INSERT INTO `{arch}` ({col_sql}, `archived_on`, `archive_run`,"
 			f" `fiscal_year_archived`)"
 			f" SELECT {col_sql}, NOW(6), %s, {fy_subquery}"
 			f" FROM `{live}` WHERE `name` IN ({placeholders})",
-			[run_name] + names,
+			insert_params + names,
 		)
 		# Backfill FY when Fiscal Year master had no matching range
 		frappe.db.sql(
@@ -543,6 +565,14 @@ def _archive_doctype(rule, doctype, cutoff, batch_size, run_name, parent_names=N
 			f" OR `fiscal_year_archived` = '')",
 			[fallback_fy] + [run_name] + names,
 		)
+		if is_child and parent_arch and _table_exists(parent_arch) and _column_exists(arch, parent_key):
+			frappe.db.sql(
+				f"UPDATE `{arch}` c INNER JOIN `{parent_arch}` p ON p.`name` = c.`{parent_key}`"
+				f" SET c.`fiscal_year_archived` = p.`fiscal_year_archived`"
+				f" WHERE c.`name` IN ({placeholders})"
+				f" AND IFNULL(p.`fiscal_year_archived`, '') != ''",
+				names,
+			)
 
 		arch_rows = frappe.db.sql(
 			f"SELECT {crit_sql} FROM `{arch}` WHERE `archive_run` = %s"
@@ -574,6 +604,61 @@ def _archive_doctype(rule, doctype, cutoff, batch_size, run_name, parent_names=N
 			break
 
 	return total
+
+
+def retag_child_archive_years() -> dict:
+	"""Set child archive FY tags from the archived parent document.
+
+	Fixes line items labelled 2026 (from creation) when the parent invoice is 2025.
+	"""
+	ensure_mariadb()
+	updated = {}
+	with bypass_archives():
+		for rule in get_enabled_rules():
+			if not rule.archive_children:
+				continue
+			parent_dt = rule.doctype_name
+			parent_arch = archive_table_name(parent_dt)
+			if not _table_exists(parent_arch):
+				continue
+			for dt in expanded_rule_doctypes(rule):
+				if dt == parent_dt:
+					continue
+				child_arch = archive_table_name(dt)
+				if not _table_exists(child_arch):
+					continue
+				pf = parent_field_for_child(parent_dt, dt) or "parent"
+				if not _column_exists(child_arch, pf) or not _column_exists(child_arch, "fiscal_year_archived"):
+					continue
+				extra = ""
+				params = []
+				if _column_exists(child_arch, "parenttype"):
+					extra = " AND c.`parenttype` = %s"
+					params.append(parent_dt)
+				count = cint(
+					frappe.db.sql(
+						f"SELECT COUNT(*) FROM `{child_arch}` c"
+						f" INNER JOIN `{parent_arch}` p ON p.`name` = c.`{pf}`"
+						f" WHERE IFNULL(p.`fiscal_year_archived`, '') != ''"
+						f" AND IFNULL(c.`fiscal_year_archived`, '') != p.`fiscal_year_archived`{extra}",
+						params or None,
+					)[0][0]
+				)
+				if not count:
+					continue
+				frappe.db.sql(
+					f"UPDATE `{child_arch}` c"
+					f" INNER JOIN `{parent_arch}` p ON p.`name` = c.`{pf}`"
+					f" SET c.`fiscal_year_archived` = p.`fiscal_year_archived`"
+					f" WHERE IFNULL(p.`fiscal_year_archived`, '') != ''"
+					f" AND IFNULL(c.`fiscal_year_archived`, '') != p.`fiscal_year_archived`{extra}",
+					params or None,
+				)
+				updated[dt] = updated.get(dt, 0) + count
+	if updated:
+		frappe.db.commit()
+		clear_metadata_cache()
+	return updated
 
 
 def _journal_batch(run_name, doctype, batch_idx, expected, actual, exp_hash, act_hash, status):
@@ -928,7 +1013,7 @@ def restore_fiscal_year(fiscal_year, force=False):
 					frappe.db.commit()
 
 			_clear_openings_for_fiscal_year(fiscal_year)
-			live_cutoff = get_archive_cutoff()
+			live_cutoff = _sync_settings_after_restore(fiscal_year)
 			opening_state.rebuild_opening_state(live_cutoff, archive_run=f"restore:{fiscal_year}")
 
 			if frappe.db.exists("Archived Fiscal Year", fiscal_year):
@@ -957,11 +1042,32 @@ def restore_fiscal_year(fiscal_year, force=False):
 		clear_metadata_cache()
 
 
+def _month_start_cutoffs(start, end):
+	"""First-of-month dates from ``start`` through ``end`` inclusive."""
+	from datetime import date as date_type
+
+	start = getdate(start)
+	end = getdate(end)
+	if not start or not end or start > end:
+		return []
+	cursor = date_type(start.year, start.month, 1)
+	last = date_type(end.year, end.month, 1)
+	out = []
+	while cursor <= last:
+		out.append(getdate(cursor))
+		if cursor.month == 12:
+			cursor = date_type(cursor.year + 1, 1, 1)
+		else:
+			cursor = date_type(cursor.year, cursor.month + 1, 1)
+	return out
+
+
 def _clear_openings_for_fiscal_year(fiscal_year):
 	"""Clear openings that belong to this FY and any openings at the live cutoff.
 
 	Openings are usually keyed to the archive-run cutoff (current FY start), not
-	year_end+1. Clear both so restore does not leave stale synthetics.
+	year_end+1. Monthly runs also key openings to the first of the following
+	month. Clear those so restore does not leave stale synthetics.
 	"""
 	from frappe.utils import add_days
 
@@ -971,12 +1077,84 @@ def _clear_openings_for_fiscal_year(fiscal_year):
 	cutoffs = {get_archive_cutoff()}
 	if row and row.year_end_date:
 		cutoffs.add(add_days(getdate(row.year_end_date), 1))
+		if row.year_start_date:
+			cutoffs.update(
+				_month_start_cutoffs(row.year_start_date, add_days(getdate(row.year_end_date), 1))
+			)
 	inferred = fiscal._infer_year_end(fiscal_year)
 	if inferred:
 		cutoffs.add(add_days(getdate(inferred), 1))
+		cutoffs.update(
+			_month_start_cutoffs(
+				getdate(f"{getdate(inferred).year}-01-01"), add_days(getdate(inferred), 1)
+			)
+		)
+	try:
+		cutoffs.add(getdate(fiscal.first_of_current_month()))
+		cutoffs.add(getdate(fiscal.current_fy_start()))
+	except Exception:
+		pass
 	for cutoff in cutoffs:
 		if cutoff:
 			opening_state.clear_opening_state_for_cutoff(cutoff)
+
+
+def _sync_settings_after_restore(fiscal_year):
+	"""Point cutoff at remaining archive after a year is copied back to live."""
+	from frappe.utils import nowdate
+
+	from erpnext_data_archiver.archiver import fiscal
+
+	current_fy = fiscal.fiscal_year_for_date(nowdate())
+	settings = get_settings()
+	remaining = [
+		y["fiscal_year"]
+		for y in get_archived_year_stats()
+		if y.get("rows") and y.get("fiscal_year") != fiscal_year
+	]
+	through_year = getattr(settings, "archive_through_year", None)
+	restored_current = current_fy and fiscal_year == current_fy
+	if not restored_current and through_year != fiscal_year:
+		return get_archive_cutoff()
+
+	next_year = None
+	if remaining:
+		best = None
+		for fy in remaining:
+			_start, end = fiscal.fiscal_year_bounds(fy)
+			if not end:
+				end = fiscal._infer_year_end(fy)
+			if end and (best is None or getdate(end) > getdate(best[1])):
+				best = (fy, end)
+		next_year = best[0] if best else remaining[-1]
+
+	if next_year:
+		cutoff = fiscal.cutoff_after_fiscal_year(next_year)
+		values = {
+			"archive_through_year": next_year,
+			"archive_through_month": None,
+			"cutoff_date": cutoff,
+		}
+	else:
+		cutoff = fiscal.current_fy_start()
+		values = {
+			"archive_through_year": None,
+			"archive_through_month": None,
+			"cutoff_date": cutoff,
+		}
+
+	if restored_current:
+		values["archive_through_month"] = None
+		if not next_year:
+			values["cutoff_date"] = fiscal.current_fy_start()
+			cutoff = values["cutoff_date"]
+
+	frappe.db.set_value("Archive Settings", None, values, update_modified=False)
+	_clear_settings_cache()
+	settings.archive_through_year = values.get("archive_through_year")
+	settings.archive_through_month = values.get("archive_through_month")
+	settings.cutoff_date = values.get("cutoff_date")
+	return getdate(cutoff)
 
 
 def _restore_doctype(doctype, fiscal_year, allow_ignore=False, batch_size=2000):
@@ -1077,6 +1255,7 @@ def get_archivable_years():
 
 	current_start = getdate(fiscal.current_fy_start())
 	archived = {y["fiscal_year"]: y["rows"] for y in get_archived_year_stats()}
+	done = _max_completed_archive_cutoff()
 	by_name = {}
 
 	def _add(fy, start, end, inferred=False):
@@ -1085,12 +1264,13 @@ def get_archivable_years():
 			return
 		start = getdate(start) if start else None
 		cutoff = add_days(end, 1)
+		has_rows = fy in archived or _year_is_registered(fy)
 		by_name[fy] = {
 			"fiscal_year": fy,
 			"year_start": str(start) if start else None,
 			"year_end": str(end),
 			"cutoff_date": str(cutoff),
-			"already_archived": fy in archived,
+			"already_archived": bool(has_rows and fiscal.cutoff_covers(done, cutoff)),
 			"archived_rows": archived.get(fy, 0),
 			"inferred": inferred,
 		}
@@ -1122,6 +1302,83 @@ def get_archivable_years():
 	return [by_name[k] for k in sorted(by_name.keys())]
 
 
+def get_archivable_months():
+	"""Closed months of the current FY, when monthly archive is enabled."""
+	settings = get_settings()
+	if not cint(getattr(settings, "monthly_in_current_year", 0)):
+		return []
+	from erpnext_data_archiver.archiver import fiscal
+
+	months = fiscal.list_archivable_months()
+	done = _max_completed_archive_cutoff()
+	archived = {y["fiscal_year"]: y["rows"] for y in get_archived_year_stats()}
+	for row in months:
+		fy = row.get("fiscal_year")
+		has_rows = cint(archived.get(fy, 0)) > 0 or _year_is_registered(fy)
+		row["already_archived"] = bool(
+			has_rows and fiscal.cutoff_covers(done, row.get("cutoff_date"))
+		)
+	return months
+
+
+def _clear_settings_cache():
+	try:
+		frappe.clear_cache(doctype="Archive Settings")
+	except Exception:
+		pass
+	try:
+		frappe.clear_document_cache("Archive Settings", "Archive Settings")
+	except Exception:
+		pass
+
+
+def apply_archive_through_month(year_month, settings=None):
+	"""Persist monthly cutoff (current FY only). Current month stays live."""
+	from frappe.utils import add_days
+
+	from erpnext_data_archiver.archiver import fiscal
+
+	settings = settings or get_settings()
+	if not cint(getattr(settings, "monthly_in_current_year", 0)):
+		frappe.throw(
+			"Turn on Archive Closed Months of Current Year in Archive Settings first."
+		)
+	year, month = fiscal._parse_year_month(year_month)
+	year_month = f"{year}-{month:02d}"
+	cutoff = fiscal.cutoff_after_month(year_month)
+	cap = fiscal.first_of_current_month()
+	if getdate(cutoff) > getdate(cap):
+		frappe.throw("Cannot archive the current month. Pick the last completed month.")
+	if is_month_already_archived(year_month):
+		frappe.throw(
+			f"Already archived through {year_month}. Pick a later completed month."
+		)
+	fy_start = getdate(fiscal.current_fy_start())
+	month_start = getdate(f"{year}-{month:02d}-01")
+	if month_start < fy_start.replace(day=1):
+		frappe.throw(
+			"Pick a month in the current fiscal year, or archive a closed fiscal year instead."
+		)
+	fy = fiscal.fiscal_year_for_date(add_days(getdate(cutoff), -1)) or str(
+		add_days(getdate(cutoff), -1).year
+	)
+	frappe.db.set_value(
+		"Archive Settings",
+		None,
+		{
+			"archive_through_month": year_month,
+			"archive_through_year": fy,
+			"cutoff_date": cutoff,
+		},
+		update_modified=False,
+	)
+	_clear_settings_cache()
+	settings.archive_through_month = year_month
+	settings.archive_through_year = fy
+	settings.cutoff_date = cutoff
+	return cutoff
+
+
 def apply_archive_through_year(fiscal_year, settings=None):
 	"""Persist year + derived cutoff on Archive Settings; return cutoff date."""
 	from erpnext_data_archiver.archiver import fiscal
@@ -1129,24 +1386,43 @@ def apply_archive_through_year(fiscal_year, settings=None):
 	if not fiscal_year:
 		frappe.throw("Pick a fiscal year to archive through.")
 	cutoff = fiscal.cutoff_after_fiscal_year(fiscal_year)
-	live_start = fiscal.current_fy_start()
-	if getdate(cutoff) > getdate(live_start):
+	settings = settings or get_settings()
+	monthly = cint(getattr(settings, "monthly_in_current_year", 0))
+	cap = fiscal.max_allowed_cutoff(monthly=monthly)
+	if getdate(cutoff) > getdate(cap):
 		frappe.throw(
-			f"Cannot archive through {fiscal_year}: that would touch the current fiscal year."
+			f"Cannot archive through {fiscal_year}: that would include data that must stay live."
+		)
+	if is_year_fully_archived(fiscal_year):
+		frappe.throw(
+			f"Fiscal year {fiscal_year} is already archived. "
+			"Restore it first if you need to archive it again."
+		)
+	current = getattr(settings, "cutoff_date", None)
+	if (
+		current
+		and getdate(cutoff) < getdate(current)
+		and get_archived_year_stats()
+	):
+		frappe.throw(
+			f"Already archived through {getdate(current)}. "
+			"Pick a later year, or restore first."
 		)
 
-	settings = settings or get_settings()
 	frappe.db.set_value(
 		"Archive Settings",
 		None,
 		{
 			"archive_through_year": fiscal_year,
+			"archive_through_month": None,
 			"cutoff_date": cutoff,
 		},
 		update_modified=False,
 	)
+	_clear_settings_cache()
 	# Keep in-memory doc in sync for this request
 	settings.archive_through_year = fiscal_year
+	settings.archive_through_month = None
 	settings.cutoff_date = cutoff
 	return cutoff
 
@@ -1169,3 +1445,83 @@ def get_archive_cutoff():
 	if settings.cutoff_date:
 		return getdate(settings.cutoff_date)
 	return getdate(compute_cutoff_date(settings))
+
+
+def _max_completed_archive_cutoff():
+	"""Latest cutoff that a completed archive run actually finished."""
+	try:
+		if not frappe.db.exists("DocType", "Archive Run"):
+			return None
+		row = frappe.db.sql(
+			"SELECT MAX(`cutoff_date`) FROM `tabArchive Run` WHERE `status` = 'Completed'"
+		)
+	except Exception:
+		return None
+	return getdate(row[0][0]) if row and row[0][0] else None
+
+
+def _year_is_registered(fiscal_year):
+	if not fiscal_year:
+		return False
+	try:
+		if frappe.db.exists("DocType", "Archived Fiscal Year") and frappe.db.exists(
+			"Archived Fiscal Year", fiscal_year
+		):
+			return True
+	except Exception:
+		pass
+	return False
+
+
+def is_year_fully_archived(fiscal_year):
+	"""True when this closed year has already been archived through its year-end."""
+	from erpnext_data_archiver.archiver import fiscal
+
+	if not fiscal_year:
+		return False
+	archived = {y["fiscal_year"]: y["rows"] for y in get_archived_year_stats()}
+	if cint(archived.get(fiscal_year, 0)) <= 0 and not _year_is_registered(fiscal_year):
+		return False
+	try:
+		target = fiscal.cutoff_after_fiscal_year(fiscal_year)
+	except Exception:
+		return False
+	return fiscal.cutoff_covers(_max_completed_archive_cutoff(), target)
+
+
+def is_month_already_archived(year_month):
+	"""True when a completed run already archived through this YYYY-MM."""
+	from frappe.utils import add_days
+
+	from erpnext_data_archiver.archiver import fiscal
+
+	if not year_month:
+		return False
+	try:
+		target = fiscal.cutoff_after_month(year_month)
+	except Exception:
+		return False
+	if not fiscal.cutoff_covers(_max_completed_archive_cutoff(), target):
+		return False
+	fy = fiscal.fiscal_year_for_date(add_days(getdate(target), -1)) or str(
+		add_days(getdate(target), -1).year
+	)
+	archived = {y["fiscal_year"]: y["rows"] for y in get_archived_year_stats()}
+	return cint(archived.get(fy, 0)) > 0 or _year_is_registered(fy)
+
+
+def _refuse_if_already_archived(settings):
+	"""Block a second archive of a year (or of the same month) after a completed run."""
+	month = getattr(settings, "archive_through_month", None)
+	year = getattr(settings, "archive_through_year", None)
+	if cint(getattr(settings, "monthly_in_current_year", 0)) and month:
+		if is_month_already_archived(month):
+			frappe.throw(
+				f"Already archived through {month}. Pick a later completed month."
+			)
+		return
+	if year and is_year_fully_archived(year):
+		frappe.throw(
+			f"Fiscal year {year} is already archived. "
+			"Restore it first if you need to archive it again."
+		)

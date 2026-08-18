@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 import frappe
-from frappe.utils import now
+from frappe.utils import getdate, now
 
 from erpnext_data_archiver.archiver import engine, opening_state, preflight, reconcile
 from erpnext_data_archiver.archiver.query_patch import (
@@ -71,7 +71,10 @@ def get_state():
 		"backup_ready": backup_ready,
 		"cutoff_date": str(settings.cutoff_date or engine.compute_cutoff_date(settings)),
 		"archive_through_year": getattr(settings, "archive_through_year", None),
+		"archive_through_month": getattr(settings, "archive_through_month", None),
+		"monthly_in_current_year": bool(getattr(settings, "monthly_in_current_year", 0)),
 		"archivable_years": [] if restore_busy else engine.get_archivable_years(),
+		"archivable_months": [] if restore_busy else engine.get_archivable_months(),
 		"archived_years": archived_years,
 		"session_years": get_session_years(),
 		"live_tables": live_tables,
@@ -144,13 +147,31 @@ def deactivate_archive_years():
 
 
 @frappe.whitelist()
-def preview_archive(fiscal_year=None):
+def preview_archive(fiscal_year=None, through_month=None):
 	"""Preflight + row counts without mutating data."""
 	_check_manager()
 	settings = engine.get_settings()
-	if fiscal_year:
-		from erpnext_data_archiver.archiver import fiscal
+	from erpnext_data_archiver.archiver import fiscal
 
+	if through_month:
+		if not getattr(settings, "monthly_in_current_year", 0):
+			frappe.throw(
+				"Turn on Archive Closed Months of Current Year in Archive Settings first."
+			)
+		if engine.is_month_already_archived(through_month):
+			frappe.throw(
+				f"Already archived through {through_month}. Pick a later completed month."
+			)
+		cutoff = fiscal.cutoff_after_month(through_month)
+		cap = fiscal.first_of_current_month()
+		if getdate(cutoff) > getdate(cap):
+			frappe.throw("Cannot archive the current month. Pick the last completed month.")
+	elif fiscal_year:
+		if engine.is_year_fully_archived(fiscal_year):
+			frappe.throw(
+				f"Fiscal year {fiscal_year} is already archived. "
+				"Restore it first if you need to archive it again."
+			)
 		cutoff = fiscal.cutoff_after_fiscal_year(fiscal_year)
 	else:
 		cutoff = settings.cutoff_date or engine.compute_cutoff_date(settings)
@@ -170,6 +191,7 @@ def preview_archive(fiscal_year=None):
 		"preflight": report,
 		"preview": counts,
 		"fiscal_year": fiscal_year or getattr(settings, "archive_through_year", None),
+		"through_month": through_month or getattr(settings, "archive_through_month", None),
 		"cutoff_date": str(cutoff),
 	}
 
@@ -215,6 +237,7 @@ def _spawn_engine_call(python_stmt: str) -> int:
 def confirm_archive(
 	confirmation,
 	fiscal_year=None,
+	through_month=None,
 	run_now=0,
 	ignore_drafts=1,
 	ignore_failed_reposts=1,
@@ -227,12 +250,23 @@ def confirm_archive(
 	if (confirmation or "").strip() != phrase:
 		frappe.throw(f"Confirmation phrase must be exactly: {phrase}")
 
-	if fiscal_year:
+	if through_month:
+		cutoff = engine.apply_archive_through_month(through_month, settings)
+		fy = getattr(settings, "archive_through_year", None)
+	elif fiscal_year:
 		cutoff = engine.apply_archive_through_year(fiscal_year, settings)
+		fy = fiscal_year
+	elif getattr(settings, "archive_through_month", None) and getattr(
+		settings, "monthly_in_current_year", 0
+	):
+		cutoff = engine.apply_archive_through_month(settings.archive_through_month, settings)
+		fy = getattr(settings, "archive_through_year", None)
 	elif getattr(settings, "archive_through_year", None):
 		cutoff = engine.apply_archive_through_year(settings.archive_through_year, settings)
+		fy = settings.archive_through_year
 	else:
 		cutoff = settings.cutoff_date or engine.compute_cutoff_date(settings)
+		fy = getattr(settings, "archive_through_year", None)
 
 	ignore_drafts = bool(int(ignore_drafts or 0))
 	ignore_failed_reposts = True
@@ -249,8 +283,8 @@ def confirm_archive(
 	except preflight.PreflightError as exc:
 		frappe.throw(str(exc))
 
-	fy = fiscal_year or getattr(settings, "archive_through_year", None)
-	audit_detail = {"cutoff": str(cutoff), "fiscal_year": fy}
+	fy = fy or getattr(settings, "archive_through_year", None)
+	audit_detail = {"cutoff": str(cutoff), "fiscal_year": fy, "through_month": through_month}
 
 	run = frappe.new_doc("Archive Run")
 	run.cutoff_date = cutoff

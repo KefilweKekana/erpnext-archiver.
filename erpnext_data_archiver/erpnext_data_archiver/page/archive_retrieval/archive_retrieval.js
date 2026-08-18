@@ -55,7 +55,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 					</div>
 					<p class="eda-muted" style="margin:0 0 4px">
 						${__(
-							"To archive: pick a closed fiscal year under Run archive. Leave Run now ticked so the job starts immediately. Restore is available after a run completes."
+							"To archive: pick a closed fiscal year, or a closed month of the current year if monthly archive is on. The current month always stays live."
 						)}
 					</p>
 					<div class="eda-op-cards">
@@ -63,7 +63,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 							<span class="eda-op-copy">
 								<span class="eda-op-title">${__("Run archive")}</span>
 								<span class="eda-op-desc">${__(
-									"Pick a fiscal year to move out of live tables"
+									"Pick a closed year or month to move out of live tables"
 								)}</span>
 							</span>
 							<span class="eda-op-chevron" aria-hidden="true"></span>
@@ -850,23 +850,40 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 	});
 
 	function open_run_dialog() {
-		const years = state.data.archivable_years || [];
+		const years = (state.data.archivable_years || []).filter((y) => !y.already_archived);
+		const months = (state.data.archivable_months || []).filter((m) => !m.already_archived);
+		const monthly = !!(state.data && state.data.monthly_in_current_year);
 		const phrase = state.data.confirmation_phrase || "ARCHIVE";
-		if (!years.length) {
+		if (!years.length && !(monthly && months.length)) {
 			frappe.msgprint(
 				__(
-					"No completed fiscal years are available to archive yet. Create older Fiscal Years in ERPNext, or wait until the current year ends."
+					"Nothing left to archive. Closed years already in archive stay there until you restore. If monthly archive is on, wait until a later month closes."
 				)
 			);
 			return;
 		}
 
-		const default_year =
-			state.data.archive_through_year ||
-			(years.filter((y) => !y.already_archived).slice(-1)[0] || years[years.length - 1])
-				.fiscal_year;
+		const default_year = (
+			years.find((y) => y.fiscal_year === state.data.archive_through_year) ||
+			years.slice(-1)[0] ||
+			{}
+		).fiscal_year;
+		const default_month = (
+			months.find((m) => m.month === state.data.archive_through_month) ||
+			months.slice(-1)[0] ||
+			{}
+		).month;
 
-		function cutoff_note_html(fy) {
+		function cutoff_note_html(fy, month) {
+			if (month) {
+				const meta = months.find((m) => m.month === month);
+				if (!meta) return "";
+				return `<p class="text-muted" style="margin:0">
+					${__("Will archive eligible data before")}
+					<strong>${frappe.utils.escape_html(meta.cutoff_date)}</strong>
+					${__("· current month stays live")}
+				</p>`;
+			}
 			const meta = years.find((y) => y.fiscal_year === fy);
 			if (!meta) return "";
 			return `<p class="text-muted" style="margin:0">
@@ -895,57 +912,96 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 				);
 			}
 			bits.push(`<p class="text-muted" style="margin:0 0 8px">
-				${__(
-					"Choose the last closed year to archive. Everything through the end of that year leaves live tables. Newer years stay live."
-				)}
+				${
+					monthly
+						? __(
+								"Closed fiscal years, or closed months of the current year. The month you are in is never archived. Unpaid invoices stay live."
+						  )
+						: __(
+								"Choose the last closed year to archive. Everything through the end of that year leaves live tables. Newer years stay live."
+						  )
+				}
 			</p>`);
 			return bits.join("");
 		}
 
+		const fields = [
+			{
+				fieldname: "help",
+				fieldtype: "HTML",
+				options: start_warning_html(),
+			},
+		];
+		if (monthly && months.length) {
+			fields.push({
+				fieldname: "scope",
+				fieldtype: "Select",
+				label: __("Archive"),
+				options: [__("Closed fiscal year"), __("Closed month of current year")].join("\n"),
+				default: months.length ? __("Closed month of current year") : __("Closed fiscal year"),
+			});
+		}
+		if (years.length) {
+			fields.push({
+				fieldname: "fiscal_year",
+				fieldtype: "Select",
+				label: __("Archive through fiscal year"),
+				options: years.map((y) => y.fiscal_year).join("\n"),
+				default: default_year,
+			});
+		}
+		if (monthly && months.length) {
+			fields.push({
+				fieldname: "through_month",
+				fieldtype: "Select",
+				label: __("Archive through month"),
+				options: months.map((m) => m.month + " — " + m.label).join("\n"),
+				default: months
+					.filter((m) => m.month === default_month)
+					.map((m) => m.month + " — " + m.label)[0] || (months.slice(-1)[0].month + " — " + months.slice(-1)[0].label),
+			});
+		}
+		fields.push(
+			{
+				fieldname: "cutoff_note",
+				fieldtype: "HTML",
+				options: cutoff_note_html(default_year, monthly && months.length ? default_month : null),
+			},
+			{
+				fieldname: "confirmation",
+				fieldtype: "Data",
+				label: __("Type {0} to confirm", [phrase]),
+				reqd: 1,
+			},
+			{
+				fieldname: "run_now",
+				fieldtype: "Check",
+				label: __("Run immediately (do not use the job queue)"),
+				default: 1,
+				read_only: 1,
+			},
+			{
+				fieldname: "ignore_drafts",
+				fieldtype: "Check",
+				label: __("Ignore old drafts (they stay in live tables)"),
+				default: 1,
+			}
+		);
+
 		const d = new frappe.ui.Dialog({
-			title: __("Archive a Fiscal Year"),
-			fields: [
-				{
-					fieldname: "help",
-					fieldtype: "HTML",
-					options: start_warning_html(),
-				},
-				{
-					fieldname: "fiscal_year",
-					fieldtype: "Select",
-					label: __("Archive through fiscal year"),
-					options: years.map((y) => y.fiscal_year).join("\n"),
-					default: default_year,
-					reqd: 1,
-				},
-				{
-					fieldname: "cutoff_note",
-					fieldtype: "HTML",
-					options: cutoff_note_html(default_year),
-				},
-				{
-					fieldname: "confirmation",
-					fieldtype: "Data",
-					label: __("Type {0} to confirm", [phrase]),
-					reqd: 1,
-				},
-				{
-					fieldname: "run_now",
-					fieldtype: "Check",
-					label: __("Run immediately (do not use the job queue)"),
-					default: 1,
-					read_only: 1,
-				},
-				{
-					fieldname: "ignore_drafts",
-					fieldtype: "Check",
-					label: __("Ignore old drafts (they stay in live tables)"),
-					default: 1,
-				},
-			],
+			title: __("Run archive"),
+			fields,
 			primary_action_label: __("Start Archive"),
 			primary_action(values) {
 				d.disable_primary_action();
+				const month_scope =
+					monthly &&
+					months.length &&
+					(!years.length || (values.scope || "").toLowerCase().indexOf("month") !== -1);
+				let through_month = null;
+				if (month_scope && values.through_month) {
+					through_month = String(values.through_month).split(" — ")[0];
+				}
 				frappe.call({
 					method: "erpnext_data_archiver.api.confirm_archive",
 					freeze: true,
@@ -953,7 +1009,8 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 					timeout: 120000,
 					args: {
 						confirmation: values.confirmation,
-						fiscal_year: values.fiscal_year,
+						fiscal_year: month_scope ? null : values.fiscal_year,
+						through_month,
 						run_now: 1,
 						ignore_drafts: cint(values.ignore_drafts),
 						ignore_failed_reposts: 1,
@@ -993,10 +1050,37 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 				});
 			},
 		});
-		d.fields_dict.fiscal_year.$input.on("change", () => {
-			d.set_df_property("cutoff_note", "options", cutoff_note_html(d.get_value("fiscal_year")));
-		});
+		function refresh_cutoff() {
+			const scope = (d.get_value("scope") || "").toLowerCase();
+			const use_month =
+				monthly &&
+				months.length &&
+				(!years.length || scope.indexOf("month") !== -1);
+			const month_val = d.get_value("through_month");
+			const month = month_val ? String(month_val).split(" — ")[0] : null;
+			if (d.fields_dict.fiscal_year) {
+				d.set_df_property("fiscal_year", "hidden", use_month ? 1 : 0);
+			}
+			if (d.fields_dict.through_month) {
+				d.set_df_property("through_month", "hidden", use_month ? 0 : 1);
+			}
+			d.set_df_property(
+				"cutoff_note",
+				"options",
+				cutoff_note_html(d.get_value("fiscal_year"), use_month ? month : null)
+			);
+		}
 		d.show();
+		if (d.fields_dict.scope && d.fields_dict.scope.$input) {
+			d.fields_dict.scope.$input.on("change", refresh_cutoff);
+		}
+		if (d.fields_dict.fiscal_year && d.fields_dict.fiscal_year.$input) {
+			d.fields_dict.fiscal_year.$input.on("change", refresh_cutoff);
+		}
+		if (d.fields_dict.through_month && d.fields_dict.through_month.$input) {
+			d.fields_dict.through_month.$input.on("change", refresh_cutoff);
+		}
+		refresh_cutoff();
 	}
 
 	function open_restore_dialog() {

@@ -84,6 +84,74 @@ def company_fy_starts():
     return out
 
 
+def first_of_current_month():
+    """First day of this calendar month — current month always stays live."""
+    today = getdate(nowdate())
+    return today.replace(day=1)
+
+
+def cutoff_after_month(year_month):
+    """First date that must stay live after archiving through ``YYYY-MM``."""
+    year, month = _parse_year_month(year_month)
+    if month == 12:
+        return getdate(f"{year + 1}-01-01")
+    return getdate(f"{year}-{month + 1:02d}-01")
+
+
+def _parse_year_month(year_month):
+    text = str(year_month or "").strip()
+    parts = text.replace("/", "-").split("-")
+    if len(parts) < 2 or not parts[0].isdigit() or not parts[1].isdigit():
+        frappe.throw("Month must be YYYY-MM (for example 2026-07).")
+    year, month = int(parts[0]), int(parts[1])
+    if month < 1 or month > 12:
+        frappe.throw("Month must be between 01 and 12.")
+    return year, month
+
+
+def list_archivable_months():
+    """Closed months of the current fiscal year (not the current month)."""
+    fy_start = getdate(current_fy_start())
+    cap = getdate(first_of_current_month())
+    cursor = fy_start.replace(day=1)
+    out = []
+    while True:
+        through = f"{cursor.year}-{cursor.month:02d}"
+        cutoff = cutoff_after_month(through)
+        if getdate(cutoff) > cap:
+            break
+        label = cursor.strftime("%B %Y")
+        out.append(
+            {
+                "month": through,
+                "label": label,
+                "cutoff_date": str(cutoff),
+                "fiscal_year": fiscal_year_for_date(cursor) or str(cursor.year),
+            }
+        )
+        if cursor.month == 12:
+            cursor = cursor.replace(year=cursor.year + 1, month=1, day=1)
+        else:
+            cursor = cursor.replace(month=cursor.month + 1, day=1)
+        if cursor >= cap:
+            break
+    return out
+
+
+def max_allowed_cutoff(monthly=False):
+    """Latest cutoff date an archive run may use."""
+    if monthly:
+        return getdate(first_of_current_month())
+    return getdate(current_fy_start())
+
+
+def cutoff_covers(existing, target):
+    """True when an existing archive cutoff already includes ``target``."""
+    if existing is None or target is None or existing == "" or target == "":
+        return False
+    return getdate(existing) >= getdate(target)
+
+
 def cutoff_after_fiscal_year(fiscal_year):
     """First date that must stay live after archiving through ``fiscal_year``."""
     from frappe.utils import add_days

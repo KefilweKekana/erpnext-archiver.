@@ -1,6 +1,6 @@
 import frappe
 from frappe.model.document import Document
-from frappe.utils import getdate
+from frappe.utils import cint, getdate
 
 
 class ArchiveSettings(Document):
@@ -11,15 +11,29 @@ class ArchiveSettings(Document):
 			if not frappe.db.exists("DocType", rule.doctype_name):
 				frappe.throw(f"DocType {rule.doctype_name} does not exist.")
 
-		if self.archive_through_year:
+		if cint(self.monthly_in_current_year) and self.archive_through_month:
+			from frappe.utils import add_days
+
+			from erpnext_data_archiver.archiver import fiscal
+
+			cutoff = fiscal.cutoff_after_month(self.archive_through_month)
+			cap = fiscal.first_of_current_month()
+			if getdate(cutoff) > getdate(cap):
+				frappe.throw("Cannot archive the current month. Pick the last completed month.")
+			self.cutoff_date = cutoff
+			fy = fiscal.fiscal_year_for_date(add_days(getdate(cutoff), -1))
+			if fy:
+				self.archive_through_year = fy
+		elif self.archive_through_year:
 			from erpnext_data_archiver.archiver import fiscal
 
 			cutoff = fiscal.cutoff_after_fiscal_year(self.archive_through_year)
-			live_start = fiscal.current_fy_start()
-			if getdate(cutoff) > getdate(live_start):
+			monthly = cint(self.monthly_in_current_year)
+			cap = fiscal.max_allowed_cutoff(monthly=monthly)
+			if getdate(cutoff) > getdate(cap):
 				frappe.throw(
 					f"Cannot archive through {self.archive_through_year}: "
-					"that would include the current fiscal year."
+					"that would include data that must stay live."
 				)
 			self.cutoff_date = cutoff
 

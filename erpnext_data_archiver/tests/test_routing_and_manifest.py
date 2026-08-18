@@ -58,10 +58,18 @@ if "frappe" not in sys.modules:
 			return None
 		return base + timedelta(days=int(days))
 
+	def throw(msg, *args, **kwargs):
+		raise frappe_stub.ValidationError(msg)
+
+	def nowdate():
+		return "2026-08-18"
+
+	frappe_stub.throw = throw
 	frappe_stub.utils.getdate = getdate
 	frappe_stub.utils.flt = flt
 	frappe_stub.utils.cint = cint
 	frappe_stub.utils.add_days = add_days
+	frappe_stub.utils.nowdate = nowdate
 	sys.modules["frappe"] = frappe_stub
 	sys.modules["frappe.utils"] = frappe_stub.utils
 
@@ -213,6 +221,55 @@ class TestApplyTableUnion(unittest.TestCase):
 		out = self.apply(q2, "tabSales Order", self.union)
 		self.assertIn(self.union + " so,", out)
 		self.assertNotIn("`tabSales Order` so", out.split(self.union, 1)[-1][:40])
+
+
+class TestMonthlyCutoff(unittest.TestCase):
+	"""Closed-month archive of the current fiscal year (retail / high-volume GL)."""
+
+	def test_cutoff_after_month_july(self):
+		from erpnext_data_archiver.archiver.fiscal import cutoff_after_month
+
+		self.assertEqual(cutoff_after_month("2026-07"), date(2026, 8, 1))
+
+	def test_cutoff_after_month_december(self):
+		from erpnext_data_archiver.archiver.fiscal import cutoff_after_month
+
+		self.assertEqual(cutoff_after_month("2026-12"), date(2027, 1, 1))
+
+	def test_max_allowed_cutoff_monthly_is_first_of_this_month(self):
+		from erpnext_data_archiver.archiver.fiscal import max_allowed_cutoff
+
+		self.assertEqual(max_allowed_cutoff(monthly=True), date(2026, 8, 1))
+
+	def test_list_archivable_months_excludes_current_month(self):
+		from erpnext_data_archiver.archiver import fiscal
+
+		orig_start = fiscal.current_fy_start
+		orig_fy = fiscal.fiscal_year_for_date
+		fiscal.current_fy_start = lambda: date(2026, 1, 1)
+		fiscal.fiscal_year_for_date = lambda _d: "2026"
+		try:
+			months = [m["month"] for m in fiscal.list_archivable_months()]
+		finally:
+			fiscal.current_fy_start = orig_start
+			fiscal.fiscal_year_for_date = orig_fy
+		self.assertEqual(months[0], "2026-01")
+		self.assertEqual(months[-1], "2026-07")
+		self.assertNotIn("2026-08", months)
+
+	def test_invalid_month_is_rejected(self):
+		from erpnext_data_archiver.archiver.fiscal import cutoff_after_month
+
+		with self.assertRaises(Exception):
+			cutoff_after_month("2026-13")
+
+	def test_cutoff_covers_refuses_same_or_earlier(self):
+		from erpnext_data_archiver.archiver.fiscal import cutoff_covers
+
+		self.assertTrue(cutoff_covers("2026-01-01", "2026-01-01"))
+		self.assertTrue(cutoff_covers("2026-08-01", "2026-01-01"))
+		self.assertFalse(cutoff_covers("2026-01-01", "2026-08-01"))
+		self.assertFalse(cutoff_covers(None, "2026-01-01"))
 
 
 if __name__ == "__main__":

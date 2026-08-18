@@ -27,6 +27,12 @@ def after_migrate():
 	except Exception:
 		frappe.log_error("erpnext_data_archiver: seed_default_rules failed after migrate")
 	sync_all_archive_tables()
+	try:
+		from erpnext_data_archiver.archiver.engine import retag_child_archive_years
+
+		retag_child_archive_years()
+	except Exception:
+		frappe.log_error("erpnext_data_archiver: retag_child_archive_years failed after migrate")
 
 
 def before_uninstall():
