@@ -85,39 +85,13 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 						<h3>${__("Browse archived data")}</h3>
 						<p class="eda-muted">
 							${__(
-								"Tick a year, then open a DocType (Sales Invoice, GL Entry, …) to see its archived documents. Use Browse archived data for a popup."
+								"Tick a year, then open a DocType. Sales Invoice includes a dropdown to print archived Sales or POS Invoices."
 							)}
 						</p>
 					</div>
 					<span class="eda-count-chip eda-browse-year-label"></span>
 				</div>
 				<div class="eda-browse-list"></div>
-			</section>
-
-			<section class="eda-panel eda-panel--reprint">
-				<div class="eda-panel-head">
-					<div>
-						<h3>${__("Reprint an invoice")}</h3>
-						<p class="eda-muted">
-							${__(
-								"Look up a Sales Invoice from live or archived years and print it. Nothing is restored."
-							)}
-						</p>
-					</div>
-				</div>
-				<div class="eda-reprint-bar">
-					<select class="form-control eda-reprint-doctype" style="max-width:180px">
-						<option value="Sales Invoice">${__("Sales Invoice")}</option>
-						<option value="POS Invoice">${__("POS Invoice")}</option>
-					</select>
-					<input type="text" class="form-control eda-reprint-q" placeholder="${__(
-						"Invoice number or customer"
-					)}">
-					<button type="button" class="btn btn-primary eda-reprint-search">
-						${__("Search")}
-					</button>
-				</div>
-				<div class="eda-reprint-results"></div>
 			</section>
 
 			<section class="eda-panel eda-panel--foot">
@@ -468,10 +442,59 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 			);
 			return;
 		}
-		const html = doctypes
+		const invoice_names = ["Sales Invoice", "POS Invoice"];
+		const invoices = doctypes.filter((dt) => invoice_names.includes(dt.doctype));
+		const rest = doctypes.filter((dt) => !invoice_names.includes(dt.doctype));
+		const items = [];
+		if (invoices.length) {
+			const default_invoice = invoices.some((d) => d.doctype === "Sales Invoice")
+				? "Sales Invoice"
+				: invoices[0].doctype;
+			items.push({
+				doctype: "Sales Invoice",
+				selected: default_invoice,
+				rows: invoices.reduce((s, d) => s + cint(d.rows), 0),
+				invoice_picker: [
+					{ doctype: "Sales Invoice" },
+					{ doctype: "POS Invoice" },
+				],
+			});
+		}
+		rest.forEach((dt) => items.push(dt));
+
+		const html = items
 			.map((dt) => {
 				const name = frappe.utils.escape_html(dt.doctype);
-				return `<div class="eda-browse-item" data-doctype="${name}" data-next-start="0">
+				const selected = frappe.utils.escape_html(dt.selected || dt.doctype);
+				const picker = dt.invoice_picker;
+				let tools;
+				if (picker && picker.length) {
+					const options = picker
+						.map((p) => {
+							const is_sel = p.doctype === (dt.selected || dt.doctype) ? " selected" : "";
+							return `<option value="${frappe.utils.escape_html(p.doctype)}"${is_sel}>${frappe.utils.escape_html(
+								p.doctype
+							)}</option>`;
+						})
+						.join("");
+					tools = `<div class="eda-browse-tools eda-reprint-bar">
+						<select class="form-control eda-browse-invoice-dt" style="max-width:180px">${options}</select>
+						<input type="text" class="form-control eda-browse-search"
+							placeholder="${__("Invoice number or customer")}">
+						<button type="button" class="btn btn-primary btn-sm eda-browse-search-btn">${__(
+							"Search"
+						)}</button>
+					</div>`;
+				} else {
+					tools = `<div class="eda-browse-tools">
+						<input type="text" class="form-control eda-browse-search input-sm"
+							placeholder="${__("Search name, customer, account…")}">
+						<button type="button" class="btn btn-default btn-sm eda-browse-search-btn">${__(
+							"Search"
+						)}</button>
+					</div>`;
+				}
+				return `<div class="eda-browse-item" data-doctype="${selected}" data-next-start="0">
 					<button type="button" class="eda-browse-toggle">
 						<span class="eda-browse-toggle-copy">
 							<span class="eda-browse-dt">${name}</span>
@@ -480,13 +503,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 						<span class="eda-browse-chevron" aria-hidden="true"></span>
 					</button>
 					<div class="eda-browse-body">
-						<div class="eda-browse-tools">
-							<input type="text" class="form-control eda-browse-search input-sm"
-								placeholder="${__("Search name, customer, account…")}">
-							<button type="button" class="btn btn-default btn-sm eda-browse-search-btn">${__(
-								"Search"
-							)}</button>
-						</div>
+						${tools}
 						<div class="eda-browse-rows"></div>
 						<button type="button" class="btn btn-default btn-sm eda-browse-more" style="display:none">
 							${__("Load more")}
@@ -578,6 +595,10 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 	}
 
 	function load_browse_docs($item, append) {
+		const picker = $item.find(".eda-browse-invoice-dt");
+		if (picker.length) {
+			$item.attr("data-doctype", picker.val());
+		}
 		const doctype = $item.attr("data-doctype");
 		const years = ticked_years();
 		if (!doctype || !years.length) return;
@@ -659,7 +680,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 					fieldname: "hint",
 					fieldtype: "HTML",
 					options: `<p class="eda-muted" style="margin:0 0 10px">${__(
-						"Open a DocType to see archived Sales Invoices, GL Entries, and the rest for the ticked year. Nothing is restored."
+						"Open a DocType to see archived documents for the ticked year. Sales Invoice has a dropdown for Sales Invoice or POS Invoice, with Print. Nothing is restored."
 					)}</p>`,
 				},
 				{ fieldname: "body", fieldtype: "HTML" },
@@ -685,6 +706,13 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 		});
 		$root.on("click", ".eda-browse-search-btn", function () {
 			const $item = $(this).closest(".eda-browse-item");
+			$item.attr("data-loaded", "1");
+			load_browse_docs($item, false);
+		});
+		$root.on("change", ".eda-browse-invoice-dt", function () {
+			const $item = $(this).closest(".eda-browse-item");
+			$item.attr("data-doctype", $(this).val());
+			$item.attr("data-next-start", "0");
 			$item.attr("data-loaded", "1");
 			load_browse_docs($item, false);
 		});
@@ -1010,82 +1038,6 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 	});
 
 	bind_browse_events($main);
-
-	$main.on("click", ".eda-reprint-search", search_reprint);
-	$main.on("keydown", ".eda-reprint-q", (e) => {
-		if (e.key === "Enter") {
-			e.preventDefault();
-			search_reprint();
-		}
-	});
-
-	function search_reprint() {
-		const query = ($main.find(".eda-reprint-q").val() || "").trim();
-		const doctype = $main.find(".eda-reprint-doctype").val() || "Sales Invoice";
-		const $out = $main.find(".eda-reprint-results");
-		if (query.length < 2) {
-			frappe.msgprint(__("Type at least 2 characters (invoice number or customer)."));
-			return;
-		}
-		$out.html(`<div class="eda-muted">${__("Searching…")}</div>`);
-		frappe.call({
-			method: "erpnext_data_archiver.api.search_archived_invoices",
-			args: { query, doctype },
-			callback(r) {
-				const rows = ((r && r.message) || {}).invoices || [];
-				if (!rows.length) {
-					$out.html(
-						`<div class="eda-empty"><div class="eda-empty-title">${__(
-							"No invoices found"
-						)}</div><div class="eda-muted">${__(
-							"Try the full invoice number, or the customer name used on the invoice."
-						)}</div></div>`
-					);
-					return;
-				}
-				const fmt = (n) => {
-					const v = parseFloat(n);
-					if (isNaN(v)) return "";
-					try {
-						return v.toLocaleString(undefined, {
-							minimumFractionDigits: 2,
-							maximumFractionDigits: 2,
-						});
-					} catch (e) {
-						return String(v);
-					}
-				};
-				const html = rows
-					.map((row) => {
-						const src = row.source === "Archive" ? __("Archived") : __("Live");
-						const fy = row.fiscal_year
-							? frappe.utils.escape_html(row.fiscal_year)
-							: "";
-						return `<div class="eda-reprint-row">
-							<div>
-								<div class="eda-reprint-name">${frappe.utils.escape_html(row.name)}</div>
-								<div class="eda-muted">${frappe.utils.escape_html(
-									row.customer_name || row.customer || ""
-								)} · ${frappe.utils.escape_html(row.posting_date || "")}</div>
-							</div>
-							<div class="eda-reprint-meta">
-								<span class="eda-badge ${row.source === "Archive" ? "is-warn" : "is-ok"}">${src}${
-							fy ? " " + fy : ""
-						}</span>
-								<strong>${fmt(row.grand_total)}</strong>
-								<button type="button" class="btn btn-default btn-sm eda-reprint-print"
-									data-name="${frappe.utils.escape_html(row.name)}"
-									data-doctype="${frappe.utils.escape_html(doctype)}">
-									${__("Print")}
-								</button>
-							</div>
-						</div>`;
-					})
-					.join("");
-				$out.html(html);
-			},
-		});
-	}
 
 	frappe.realtime.on("eda_archive_progress", (data) => {
 		frappe.show_alert(
