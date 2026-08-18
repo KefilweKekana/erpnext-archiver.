@@ -201,9 +201,9 @@ def confirm_archive(
 	confirmation,
 	fiscal_year=None,
 	run_now=0,
-	ignore_drafts=0,
-	ignore_failed_reposts=0,
-	skip_queued_reposts=0,
+	ignore_drafts=1,
+	ignore_failed_reposts=1,
+	skip_queued_reposts=1,
 ):
 	"""Start archive after typed confirmation. Run now detaches from the HTTP request."""
 	_check_manager()
@@ -220,10 +220,8 @@ def confirm_archive(
 		cutoff = settings.cutoff_date or engine.compute_cutoff_date(settings)
 
 	ignore_drafts = bool(int(ignore_drafts or 0))
-	ignore_failed_reposts = bool(int(ignore_failed_reposts or 0))
-	skip_queued_reposts = bool(int(skip_queued_reposts or 0))
-	if skip_queued_reposts:
-		preflight.skip_queued_reposts()
+	ignore_failed_reposts = True
+	preflight.skip_queued_reposts()
 	require_backup = bool(getattr(settings, "require_backup_before_archive", 1))
 	try:
 		preflight.run_preflight(
@@ -248,63 +246,21 @@ def confirm_archive(
 	run.insert(ignore_permissions=True)
 	frappe.db.commit()
 
-	if int(run_now or 0):
-		try:
-			pid = _spawn_engine_call(
-				"from erpnext_data_archiver.archiver.engine import run_archive; "
-				f"run_archive(run_name={run.name!r}, ignore_drafts={ignore_drafts}, "
-				f"ignore_failed_reposts={ignore_failed_reposts})"
-			)
-		except Exception as exc:
-			frappe.enqueue(
-				"erpnext_data_archiver.archiver.engine.run_archive",
-				run_name=run.name,
-				ignore_drafts=ignore_drafts,
-				ignore_failed_reposts=ignore_failed_reposts,
-				queue="long",
-				timeout=4 * 60 * 60,
-				job_name="erpnext_data_archiver.run_archive",
-				enqueue_after_commit=True,
-			)
-			engine._audit("archive_queued_spawn_failed", frappe.session.user, {**audit_detail, "error": str(exc)})
-			return {
-				"ok": True,
-				"queued": True,
-				"run_name": run.name,
-				"message": (
-					f"Could not start a detached process ({exc}). "
-					f"Queued {run.name} instead — start a long-queue worker if it stays Draft."
-				),
-				"cutoff_date": str(cutoff),
-				"fiscal_year": fy,
-			}
-		engine._audit("archive_started", frappe.session.user, {**audit_detail, "run": run.name, "pid": pid})
-		return {
-			"ok": True,
-			"queued": False,
-			"started": True,
-			"run_name": run.name,
-			"message": f"Archive {run.name} started. Keep this page open — years appear when it finishes.",
-			"cutoff_date": str(cutoff),
-			"fiscal_year": fy,
-		}
-
-	frappe.enqueue(
-		"erpnext_data_archiver.archiver.engine.run_archive",
-		run_name=run.name,
-		ignore_drafts=ignore_drafts,
-		ignore_failed_reposts=ignore_failed_reposts,
-		queue="long",
-		timeout=4 * 60 * 60,
-		job_name="erpnext_data_archiver.run_archive",
-		enqueue_after_commit=True,
-	)
-	engine._audit("archive_queued", frappe.session.user, {**audit_detail, "run": run.name})
+	try:
+		pid = _spawn_engine_call(
+			"from erpnext_data_archiver.archiver.engine import run_archive; "
+			f"run_archive(run_name={run.name!r}, ignore_drafts={ignore_drafts}, "
+			f"ignore_failed_reposts={ignore_failed_reposts})"
+		)
+	except Exception as exc:
+		frappe.throw(f"Could not start archive process: {exc}")
+	engine._audit("archive_started", frappe.session.user, {**audit_detail, "run": run.name, "pid": pid})
 	return {
 		"ok": True,
-		"queued": True,
+		"queued": False,
+		"started": True,
 		"run_name": run.name,
-		"message": f"Archive {run.name} queued. Start a long-queue worker if status stays Draft.",
+		"message": f"Archive {run.name} started immediately. Keep this page open — years appear when it finishes.",
 		"cutoff_date": str(cutoff),
 		"fiscal_year": fy,
 	}

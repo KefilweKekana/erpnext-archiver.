@@ -227,6 +227,11 @@ def _check_drafts(cutoff, add, ignore=False):
 
 
 def _check_repost(add, ignore_failed=False):
+	skipped = []
+	try:
+		skipped = skip_queued_reposts()
+	except Exception:
+		skipped = []
 	active = 0
 	failed_or_draft = 0
 	parts = []
@@ -245,30 +250,29 @@ def _check_repost(add, ignore_failed=False):
 				parts.append(f"{dt}: {queued} running, {failed} failed, {drafts} draft")
 		except Exception:
 			pass
-	ok = active == 0 and (failed_or_draft == 0 or ignore_failed)
-	if active:
+	ok = active == 0
+	if skipped:
+		msg = f"Skipped {len(skipped)} queued/in-progress repost job(s) so archive does not wait"
+	elif active:
 		msg = (
 			f"{active} repost job(s) still Queued/In Progress"
 			+ (f" ({'; '.join(parts)})" if parts else "")
-			+ ". Wait for them to finish or cancel them in Stock / Accounts."
-		)
-	elif failed_or_draft and not ignore_failed:
-		msg = (
-			f"{failed_or_draft} failed or draft repost job(s)"
-			+ (f" ({'; '.join(parts)})" if parts else "")
-			+ ". Retry or cancel them, or tick Ignore failed/draft reposts."
-		)
-	elif failed_or_draft and ignore_failed:
-		msg = f"Ignoring {failed_or_draft} failed/draft repost(s)" + (
-			f" ({'; '.join(parts)})" if parts else ""
+			+ ". Could not skip them automatically."
 		)
 	else:
 		msg = "No pending repost jobs"
+	if failed_or_draft and skipped:
+		msg += f"; {failed_or_draft} failed/draft repost(s) left as-is"
 	add(
 		"PRE-003",
 		ok,
 		msg,
-		{"active": active, "failed_or_draft": failed_or_draft, "detail": parts},
+		{
+			"active": active,
+			"failed_or_draft": failed_or_draft,
+			"skipped": skipped,
+			"detail": parts,
+		},
 	)
 
 

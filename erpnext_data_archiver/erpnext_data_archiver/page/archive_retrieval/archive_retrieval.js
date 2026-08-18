@@ -461,31 +461,19 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 				{
 					fieldname: "run_now",
 					fieldtype: "Check",
-					label: __("Run now (do not wait for a background worker)"),
+					label: __("Run immediately (do not use the job queue)"),
 					default: 1,
+					read_only: 1,
 				},
 				{
 					fieldname: "ignore_drafts",
 					fieldtype: "Check",
 					label: __("Ignore old drafts (they stay in live tables)"),
-					default: 0,
-				},
-				{
-					fieldname: "ignore_failed_reposts",
-					fieldtype: "Check",
-					label: __("Ignore failed/draft reposts (not jobs still running)"),
-					default: 0,
-				},
-				{
-					fieldname: "skip_queued_reposts",
-					fieldtype: "Check",
-					label: __("Skip stuck Queued/In Progress repost jobs, then archive"),
-					default: 0,
+					default: 1,
 				},
 			],
 			primary_action_label: __("Start Archive"),
 			primary_action(values) {
-				const run_now = cint(values.run_now);
 				d.disable_primary_action();
 				frappe.call({
 					method: "erpnext_data_archiver.api.confirm_archive",
@@ -495,10 +483,10 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 					args: {
 						confirmation: values.confirmation,
 						fiscal_year: values.fiscal_year,
-						run_now,
+						run_now: 1,
 						ignore_drafts: cint(values.ignore_drafts),
-						ignore_failed_reposts: cint(values.ignore_failed_reposts),
-						skip_queued_reposts: cint(values.skip_queued_reposts),
+						ignore_failed_reposts: 1,
+						skip_queued_reposts: 1,
 					},
 					callback(r) {
 						const m = (r && r.message) || {};
