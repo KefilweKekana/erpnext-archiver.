@@ -36,6 +36,9 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 						<button type="button" class="btn btn-primary eda-activate" disabled>
 							${__("Apply to this session")}
 						</button>
+						<button type="button" class="btn btn-default eda-browse-open" disabled>
+							${__("Browse archived data")}
+						</button>
 						<button type="button" class="btn btn-default eda-deactivate">
 							${__("Use live data only")}
 						</button>
@@ -75,6 +78,21 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 					</div>
 				</section>
 			</div>
+
+			<section class="eda-panel eda-panel--browse">
+				<div class="eda-panel-head">
+					<div>
+						<h3>${__("Browse archived data")}</h3>
+						<p class="eda-muted">
+							${__(
+								"Tick a year, then open a DocType (Sales Invoice, GL Entry, …) to see its archived documents. Use Browse archived data for a popup."
+							)}
+						</p>
+					</div>
+					<span class="eda-count-chip eda-browse-year-label"></span>
+				</div>
+				<div class="eda-browse-list"></div>
+			</section>
 
 			<section class="eda-panel eda-panel--reprint">
 				<div class="eda-panel-head">
@@ -185,6 +203,21 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 .eda-reprint-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--eda-line);border-radius:10px;background:var(--eda-subtle)}
 .eda-reprint-name{font-weight:700;font-size:13.5px}
 .eda-reprint-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.eda-browse-list{display:flex;flex-direction:column;gap:8px}
+.eda-browse-item{border:1px solid var(--eda-line,#dce1e8);border-radius:11px;overflow:hidden;background:var(--eda-surface,var(--card-bg,#fff))}
+.eda-browse-toggle{display:flex!important;align-items:center;justify-content:space-between;gap:12px;width:100%;text-align:left;padding:12px 14px!important;border:0!important;background:var(--eda-subtle,var(--control-bg,#f4f6f8))!important;cursor:pointer}
+.eda-browse-toggle-copy{display:flex;flex-direction:column;gap:2px;min-width:0}
+.eda-browse-dt{font-size:13.5px;font-weight:700}
+.eda-browse-chevron{flex:0 0 auto;width:18px;height:18px;opacity:.45;transition:transform .15s ease;background:no-repeat center/14px 14px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23687385' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3l5 5-5 5'/%3E%3C/svg%3E")}
+.eda-browse-item.is-open .eda-browse-chevron{transform:rotate(90deg)}
+.eda-browse-body{display:none;padding:10px 12px 12px;border-top:1px solid var(--eda-line,#dce1e8)}
+.eda-browse-item.is-open .eda-browse-body{display:block}
+.eda-browse-tools{display:flex;gap:8px;margin-bottom:10px}
+.eda-browse-tools .form-control{flex:1}
+.eda-browse-rows{display:flex;flex-direction:column;gap:8px}
+.eda-browse-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--eda-line,#dce1e8);border-radius:10px;background:var(--eda-subtle,var(--control-bg,#f4f6f8))}
+.eda-browse-name{font-weight:700;font-size:13.5px}
+.eda-browse-more{margin-top:8px}
 @media (max-width:900px){.eda-hero,.eda-grid{grid-template-columns:1fr!important}.eda-bar-row{grid-template-columns:1fr 64px!important;grid-template-areas:"label value" "track track";gap:6px 10px}.eda-bar-label{grid-area:label}.eda-bar-value{grid-area:value}.eda-bar-track{grid-area:track}}
 `;
 			document.head.appendChild(style);
@@ -196,7 +229,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 		link.id = id;
 		link.rel = "stylesheet";
 		link.type = "text/css";
-		link.href = "/assets/erpnext_data_archiver/css/archiver.css?v=1.1.6";
+		link.href = "/assets/erpnext_data_archiver/css/archiver.css?v=1.1.7";
 		document.head.appendChild(link);
 	}
 
@@ -334,6 +367,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 		}
 
 		render_footprint(d.live_tables || []);
+		load_browse($main.find(".eda-browse-list"));
 	}
 
 	function render_footprint(tables) {
@@ -373,9 +407,334 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 		}
 	}
 
+	function ticked_years() {
+		return $main
+			.find(".eda-year-input:checked")
+			.map((_, el) => el.value)
+			.get();
+	}
+
+	function format_amount(n) {
+		const v = parseFloat(n);
+		if (isNaN(v)) return "";
+		try {
+			return v.toLocaleString(undefined, {
+				minimumFractionDigits: 2,
+				maximumFractionDigits: 2,
+			});
+		} catch (e) {
+			return String(v);
+		}
+	}
+
+	function row_meta(row) {
+		const bits = [];
+		const date = row.posting_date || row.transaction_date;
+		if (date) bits.push(date);
+		const party =
+			row.customer_name ||
+			row.customer ||
+			row.supplier_name ||
+			row.supplier ||
+			row.account ||
+			row.party;
+		if (party) bits.push(party);
+		if (row.voucher_type && row.voucher_no) {
+			bits.push(row.voucher_type + " " + row.voucher_no);
+		}
+		const amt = row.grand_total != null && row.grand_total !== "" ? row.grand_total : row.debit || row.credit;
+		if (amt) bits.push(format_amount(amt));
+		if (row.status) bits.push(row.status);
+		return bits.join(" · ");
+	}
+
+	function browse_empty_html() {
+		return `<div class="eda-empty">
+			<div class="eda-empty-title">${__("Tick an archived year")}</div>
+			<div class="eda-muted">${__(
+				"Then open Sales Invoice, GL Entry, and the other DocTypes to see what was archived that year."
+			)}</div>
+		</div>`;
+	}
+
+	function paint_browse_index($list, doctypes, years) {
+		if (!doctypes.length) {
+			$list.html(
+				`<div class="eda-empty">
+					<div class="eda-empty-title">${__("No archived documents for {0}", [
+						frappe.utils.escape_html(years.join(", ")),
+					])}</div>
+				</div>`
+			);
+			return;
+		}
+		const html = doctypes
+			.map((dt) => {
+				const name = frappe.utils.escape_html(dt.doctype);
+				return `<div class="eda-browse-item" data-doctype="${name}" data-next-start="0">
+					<button type="button" class="eda-browse-toggle">
+						<span class="eda-browse-toggle-copy">
+							<span class="eda-browse-dt">${name}</span>
+							<span class="eda-muted">${format_rows(dt.rows)} ${__("archived")}</span>
+						</span>
+						<span class="eda-browse-chevron" aria-hidden="true"></span>
+					</button>
+					<div class="eda-browse-body">
+						<div class="eda-browse-tools">
+							<input type="text" class="form-control eda-browse-search input-sm"
+								placeholder="${__("Search name, customer, account…")}">
+							<button type="button" class="btn btn-default btn-sm eda-browse-search-btn">${__(
+								"Search"
+							)}</button>
+						</div>
+						<div class="eda-browse-rows"></div>
+						<button type="button" class="btn btn-default btn-sm eda-browse-more" style="display:none">
+							${__("Load more")}
+						</button>
+					</div>
+				</div>`;
+			})
+			.join("");
+		$list.html(html);
+	}
+
+	function load_browse($list) {
+		if (!$list || !$list.length) return;
+		const years = ticked_years();
+		$main.find(".eda-browse-open").prop("disabled", !years.length);
+		$main.find(".eda-browse-year-label").text(years.length ? years.join(", ") : "");
+		if (!years.length) {
+			$list.html(browse_empty_html());
+			return;
+		}
+		$list.html(`<div class="eda-muted">${__("Loading archived DocTypes…")}</div>`);
+		frappe.call({
+			method: "erpnext_data_archiver.api.list_archived_doctypes",
+			args: { years: JSON.stringify(years) },
+			callback(r) {
+				const doctypes = ((r && r.message) || {}).doctypes || [];
+				paint_browse_index($list, doctypes, years);
+			},
+			error() {
+				$list.html(
+					`<div class="eda-empty"><div class="eda-empty-title">${__(
+						"Could not load archived DocTypes"
+					)}</div><div class="eda-muted">${__(
+						"Restart the bench if this site was just updated."
+					)}</div></div>`
+				);
+			},
+		});
+	}
+
+	function browse_row_html(row, doctype, printable) {
+		const name = frappe.utils.escape_html(row.name || "");
+		const dt = frappe.utils.escape_html(doctype);
+		const payload = encodeURIComponent(JSON.stringify(row));
+		const actions = printable
+			? `<button type="button" class="btn btn-default btn-sm eda-reprint-print"
+					data-name="${name}" data-doctype="${dt}">${__("Print")}</button>`
+			: `<button type="button" class="btn btn-default btn-sm eda-browse-view"
+					data-doctype="${dt}" data-row="${payload}">${__("View")}</button>`;
+		return `<div class="eda-browse-row">
+			<div>
+				<div class="eda-browse-name">${name}</div>
+				<div class="eda-muted">${frappe.utils.escape_html(row_meta(row))}</div>
+			</div>
+			<div class="eda-reprint-meta">${actions}</div>
+		</div>`;
+	}
+
+	function print_archived_doc(name, doctype) {
+		frappe.call({
+			method: "erpnext_data_archiver.api.print_archived_invoice",
+			freeze: true,
+			freeze_message: __("Preparing print…"),
+			args: { name, doctype },
+			callback(r) {
+				const m = (r && r.message) || {};
+				if (!m.html) {
+					frappe.msgprint(__("Could not build the printout."));
+					return;
+				}
+				const w = window.open("", "_blank");
+				if (!w) {
+					frappe.msgprint(__("Allow pop-ups to print."));
+					return;
+				}
+				w.document.open();
+				w.document.write(m.html);
+				w.document.close();
+				setTimeout(() => {
+					try {
+						w.focus();
+						w.print();
+					} catch (e) {
+						/* user can print from the window */
+					}
+				}, 400);
+			},
+		});
+	}
+
+	function load_browse_docs($item, append) {
+		const doctype = $item.attr("data-doctype");
+		const years = ticked_years();
+		if (!doctype || !years.length) return;
+		const $rows = $item.find(".eda-browse-rows");
+		const $more = $item.find(".eda-browse-more");
+		const start = append ? cint($item.attr("data-next-start")) : 0;
+		const search = ($item.find(".eda-browse-search").val() || "").trim();
+		if (!append) {
+			$rows.html(`<div class="eda-muted">${__("Loading…")}</div>`);
+			$more.hide();
+		} else {
+			$more.prop("disabled", true).text(__("Loading…"));
+		}
+		frappe.call({
+			method: "erpnext_data_archiver.api.list_archived_documents",
+			args: {
+				doctype,
+				years: JSON.stringify(years),
+				start,
+				page_length: 25,
+				search,
+			},
+			callback(r) {
+				const m = (r && r.message) || {};
+				const rows = m.rows || [];
+				const printable = !!m.printable;
+				if (!append && !rows.length) {
+					$rows.html(
+						`<div class="eda-muted">${__(
+							"No archived documents match that search."
+						)}</div>`
+					);
+					$more.hide();
+					return;
+				}
+				const html = rows.map((row) => browse_row_html(row, doctype, printable)).join("");
+				if (append) {
+					$rows.append(html);
+				} else {
+					$rows.html(html);
+				}
+				const next = start + rows.length;
+				$item.attr("data-next-start", next);
+				if (m.has_more) {
+					$more
+						.show()
+						.prop("disabled", false)
+						.text(__("Load more ({0} of {1})", [format_rows(next), format_rows(m.total)]));
+				} else {
+					$more.hide();
+					if (m.total) {
+						$rows.append(
+							`<div class="eda-muted">${__("{0} archived {1}", [
+								format_rows(m.total),
+								doctype,
+							])}</div>`
+						);
+					}
+				}
+			},
+			error() {
+				$rows.html(`<div class="eda-muted">${__("Could not load documents.")}</div>`);
+				$more.hide();
+			},
+		});
+	}
+
+	function open_browse_dialog() {
+		const years = ticked_years();
+		if (!years.length) {
+			frappe.msgprint(__("Tick an archived year first."));
+			return;
+		}
+		const d = new frappe.ui.Dialog({
+			title: __("Archived documents · {0}", [years.join(", ")]),
+			size: "large",
+			fields: [
+				{
+					fieldname: "hint",
+					fieldtype: "HTML",
+					options: `<p class="eda-muted" style="margin:0 0 10px">${__(
+						"Open a DocType to see archived Sales Invoices, GL Entries, and the rest for the ticked year. Nothing is restored."
+					)}</p>`,
+				},
+				{ fieldname: "body", fieldtype: "HTML" },
+			],
+		});
+		d.$wrapper.addClass("eda-browse-dialog");
+		d.show();
+		const $list = $('<div class="eda-browse-list"></div>');
+		d.fields_dict.body.$wrapper.empty().append($list);
+		bind_browse_events($list);
+		load_browse($list);
+	}
+
+	function bind_browse_events($root) {
+		$root.on("click", ".eda-browse-toggle", function () {
+			const $item = $(this).closest(".eda-browse-item");
+			const opening = !$item.hasClass("is-open");
+			$item.toggleClass("is-open", opening);
+			if (opening && $item.attr("data-loaded") !== "1") {
+				$item.attr("data-loaded", "1");
+				load_browse_docs($item, false);
+			}
+		});
+		$root.on("click", ".eda-browse-search-btn", function () {
+			const $item = $(this).closest(".eda-browse-item");
+			$item.attr("data-loaded", "1");
+			load_browse_docs($item, false);
+		});
+		$root.on("keydown", ".eda-browse-search", function (e) {
+			if (e.key === "Enter") {
+				e.preventDefault();
+				const $item = $(this).closest(".eda-browse-item");
+				$item.attr("data-loaded", "1");
+				load_browse_docs($item, false);
+			}
+		});
+		$root.on("click", ".eda-browse-more", function () {
+			load_browse_docs($(this).closest(".eda-browse-item"), true);
+		});
+		$root.on("click", ".eda-reprint-print", function () {
+			print_archived_doc($(this).attr("data-name"), $(this).attr("data-doctype"));
+		});
+		$root.on("click", ".eda-browse-view", function () {
+			const doctype = $(this).attr("data-doctype");
+			let row = {};
+			try {
+				row = JSON.parse(decodeURIComponent($(this).attr("data-row") || "{}"));
+			} catch (e) {
+				row = { name: $(this).data("name") };
+			}
+			const keys = Object.keys(row).filter((k) => row[k] !== null && row[k] !== "");
+			const table = keys
+				.map(
+					(k) =>
+						`<tr><td style="padding:4px 10px 4px 0;color:var(--text-muted)">${frappe.utils.escape_html(
+							k
+						)}</td><td style="padding:4px 0">${frappe.utils.escape_html(
+							String(row[k])
+						)}</td></tr>`
+				)
+				.join("");
+			frappe.msgprint({
+				title: __("{0}: {1}", [doctype, row.name || ""]),
+				message: `<table>${table}</table>`,
+			});
+		});
+	}
+
 	$main.on("change", ".eda-year-input", function () {
 		$(this).closest(".eda-year").toggleClass("is-on", this.checked);
+		clearTimeout(state.browse_timer);
+		state.browse_timer = setTimeout(() => load_browse($main.find(".eda-browse-list")), 200);
 	});
+
+	$main.on("click", ".eda-browse-open", open_browse_dialog);
 
 	$main.on("change", ".eda-show-zero", function () {
 		state.show_zero = this.checked;
@@ -650,45 +1009,14 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 		}
 	});
 
+	bind_browse_events($main);
+
 	$main.on("click", ".eda-reprint-search", search_reprint);
 	$main.on("keydown", ".eda-reprint-q", (e) => {
 		if (e.key === "Enter") {
 			e.preventDefault();
 			search_reprint();
 		}
-	});
-	$main.on("click", ".eda-reprint-print", function () {
-		const name = $(this).data("name");
-		const doctype = $(this).data("doctype");
-		frappe.call({
-			method: "erpnext_data_archiver.api.print_archived_invoice",
-			freeze: true,
-			freeze_message: __("Preparing print…"),
-			args: { name, doctype },
-			callback(r) {
-				const m = (r && r.message) || {};
-				if (!m.html) {
-					frappe.msgprint(__("Could not build the printout."));
-					return;
-				}
-				const w = window.open("", "_blank");
-				if (!w) {
-					frappe.msgprint(__("Allow pop-ups to print."));
-					return;
-				}
-				w.document.open();
-				w.document.write(m.html);
-				w.document.close();
-				setTimeout(() => {
-					try {
-						w.focus();
-						w.print();
-					} catch (e) {
-						/* user can print from the window */
-					}
-				}, 400);
-			},
-		});
 	});
 
 	function search_reprint() {

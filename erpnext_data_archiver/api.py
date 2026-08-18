@@ -371,6 +371,26 @@ def print_archived_invoice(name, doctype="Sales Invoice", print_format=None):
 	return result
 
 
+@frappe.whitelist()
+def list_archived_doctypes(years):
+	"""DocTypes that have archived rows for the ticked years."""
+	_check_browse()
+	from erpnext_data_archiver.archiver import browse
+
+	return {"doctypes": browse.list_doctypes(years)}
+
+
+@frappe.whitelist()
+def list_archived_documents(doctype, years, start=0, page_length=25, search=""):
+	"""Paginated archived documents for one DocType and ticked years."""
+	_check_browse()
+	from erpnext_data_archiver.archiver import browse
+
+	return browse.list_documents(
+		doctype, years, start=start, page_length=page_length, search=search
+	)
+
+
 def boot_session(bootinfo):
 	"""Expose the archive session state to Desk (navbar indicator)."""
 	try:

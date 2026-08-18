@@ -408,11 +408,105 @@
 	gap: 10px;
 	flex-wrap: wrap;
 }
+.eda-foot-tools {
 	display: flex;
 	align-items: center;
 	gap: 12px;
 	flex-wrap: wrap;
 	justify-content: flex-end;
+}
+
+.eda-browse-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.eda-browse-item {
+	border: 1px solid var(--eda-line);
+	border-radius: 11px;
+	overflow: hidden;
+	background: var(--eda-surface);
+}
+.eda-browse-toggle {
+	display: flex !important;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	width: 100%;
+	text-align: left;
+	padding: 12px 14px !important;
+	border: 0 !important;
+	border-radius: 0 !important;
+	background: var(--eda-subtle) !important;
+	cursor: pointer;
+	color: var(--eda-ink);
+}
+.eda-browse-toggle:hover {
+	filter: brightness(0.98);
+}
+.eda-browse-toggle-copy {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+.eda-browse-dt {
+	font-size: 13.5px;
+	font-weight: 700;
+}
+.eda-browse-chevron {
+	flex: 0 0 auto;
+	width: 18px;
+	height: 18px;
+	opacity: 0.45;
+	transition: transform 0.15s ease;
+	background: no-repeat center / 14px 14px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23687385' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3l5 5-5 5'/%3E%3C/svg%3E");
+}
+.eda-browse-item.is-open .eda-browse-chevron {
+	transform: rotate(90deg);
+}
+.eda-browse-body {
+	display: none;
+	padding: 10px 12px 12px;
+	border-top: 1px solid var(--eda-line);
+}
+.eda-browse-item.is-open .eda-browse-body {
+	display: block;
+}
+.eda-browse-tools {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 10px;
+}
+.eda-browse-tools .form-control {
+	flex: 1;
+}
+.eda-browse-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.eda-browse-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 10px 12px;
+	border: 1px solid var(--eda-line);
+	border-radius: 10px;
+	background: var(--eda-subtle);
+}
+.eda-browse-name {
+	font-weight: 700;
+	font-size: 13.5px;
+}
+.eda-browse-more {
+	margin-top: 8px;
+}
+.eda-browse-dialog .modal-body {
+	max-height: 70vh;
+	overflow: auto;
 }
 .eda-toggle {
 	display: inline-flex !important;
