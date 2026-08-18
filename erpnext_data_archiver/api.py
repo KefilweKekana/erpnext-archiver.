@@ -203,6 +203,7 @@ def confirm_archive(
 	run_now=0,
 	ignore_drafts=0,
 	ignore_failed_reposts=0,
+	skip_queued_reposts=0,
 ):
 	"""Start archive after typed confirmation. Run now detaches from the HTTP request."""
 	_check_manager()
@@ -220,6 +221,9 @@ def confirm_archive(
 
 	ignore_drafts = bool(int(ignore_drafts or 0))
 	ignore_failed_reposts = bool(int(ignore_failed_reposts or 0))
+	skip_queued_reposts = bool(int(skip_queued_reposts or 0))
+	if skip_queued_reposts:
+		preflight.skip_queued_reposts()
 	require_backup = bool(getattr(settings, "require_backup_before_archive", 1))
 	try:
 		preflight.run_preflight(

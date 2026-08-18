@@ -272,7 +272,40 @@ def _check_repost(add, ignore_failed=False):
 	)
 
 
-def _estimate_rows(cutoff) -> int:
+def skip_queued_reposts() -> list[str]:
+	"""Mark Queued/In Progress reposts as Skipped so archive preflight can pass.
+
+	Does not wait for in-flight SQL; operators should only use this on stuck jobs.
+	"""
+	skipped = []
+	for dt in ("Repost Item Valuation", "Repost Accounting Ledger"):
+		if not frappe.db.exists("DocType", dt):
+			continue
+		try:
+			rows = frappe.get_all(
+				dt,
+				filters={"docstatus": 1, "status": ["in", ["Queued", "In Progress"]]},
+				fields=["name", "status"],
+			)
+		except Exception:
+			continue
+		status_value = "Skipped"
+		try:
+			meta = frappe.get_meta(dt)
+			df = meta.get_field("status")
+			options = (df.options or "") if df else ""
+			if "Skipped" not in options and "Cancelled" in options:
+				status_value = "Cancelled"
+			elif "Skipped" not in options:
+				status_value = "Failed"
+		except Exception:
+			pass
+		for row in rows:
+			frappe.db.set_value(dt, row.name, "status", status_value, update_modified=True)
+			skipped.append(f"{dt}:{row.name}:{row.status}->{status_value}")
+	if skipped:
+		frappe.db.commit()
+	return skipped
 	try:
 		return preview_counts(cutoff)["total_rows"]
 	except Exception:

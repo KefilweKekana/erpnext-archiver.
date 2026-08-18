@@ -476,6 +476,12 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 					label: __("Ignore failed/draft reposts (not jobs still running)"),
 					default: 0,
 				},
+				{
+					fieldname: "skip_queued_reposts",
+					fieldtype: "Check",
+					label: __("Skip stuck Queued/In Progress repost jobs, then archive"),
+					default: 0,
+				},
 			],
 			primary_action_label: __("Start Archive"),
 			primary_action(values) {
@@ -492,6 +498,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 						run_now,
 						ignore_drafts: cint(values.ignore_drafts),
 						ignore_failed_reposts: cint(values.ignore_failed_reposts),
+						skip_queued_reposts: cint(values.skip_queued_reposts),
 					},
 					callback(r) {
 						const m = (r && r.message) || {};
