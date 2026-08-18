@@ -165,7 +165,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 		link.id = id;
 		link.rel = "stylesheet";
 		link.type = "text/css";
-		link.href = "/assets/erpnext_data_archiver/css/archiver.css?v=1.1.4";
+		link.href = "/assets/erpnext_data_archiver/css/archiver.css?v=1.1.5";
 		document.head.appendChild(link);
 	}
 
