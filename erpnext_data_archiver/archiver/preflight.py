@@ -33,7 +33,14 @@ def release_job_lock(owner: str) -> None:
 		cache.delete_value(key)
 
 
-def run_preflight(settings=None, cutoff=None, require_backup: bool = True, exclude_run: str | None = None) -> dict:
+def run_preflight(
+	settings=None,
+	cutoff=None,
+	require_backup: bool = True,
+	exclude_run: str | None = None,
+	ignore_drafts: bool = False,
+	ignore_failed_reposts: bool = False,
+) -> dict:
 	"""Return a structured preflight report. Raises PreflightError if blocking."""
 	from erpnext_data_archiver.archiver.engine import (
 		compute_cutoff_date,
@@ -62,10 +69,10 @@ def run_preflight(settings=None, cutoff=None, require_backup: bool = True, exclu
 	_check_fy_closed(cutoff, add)
 
 	# PRE-002 drafts in scope (sample high-volume parents)
-	_check_drafts(cutoff, add)
+	_check_drafts(cutoff, add, ignore=ignore_drafts)
 
 	# PRE-003 repost / queue
-	_check_repost(add)
+	_check_repost(add, ignore_failed=ignore_failed_reposts)
 
 	# PRE-004 conflicting job (ignore the run we are validating)
 	filters = {
@@ -189,7 +196,8 @@ def _check_fy_closed(cutoff, add):
 		add("PRE-001b", False, f"Fiscal Year check failed: {exc}")
 
 
-def _check_drafts(cutoff, add):
+def _check_drafts(cutoff, add, ignore=False):
+	by_dt = []
 	draft_total = 0
 	for dt in ("Sales Invoice", "Purchase Invoice", "Journal Entry", "Stock Entry"):
 		if not frappe.db.table_exists(dt):
@@ -202,38 +210,65 @@ def _check_drafts(cutoff, add):
 				(cutoff,),
 			)[0][0]
 		)
-		draft_total += n
-	add(
-		"PRE-002",
-		draft_total == 0,
-		"No in-scope drafts" if draft_total == 0 else f"{draft_total} draft document(s) before cutoff",
-		{"drafts": draft_total},
-	)
+		if n:
+			by_dt.append(f"{dt}: {n}")
+			draft_total += n
+	ok = draft_total == 0 or ignore
+	if draft_total == 0:
+		msg = "No in-scope drafts"
+	elif ignore:
+		msg = f"Ignoring {draft_total} draft document(s) before cutoff ({', '.join(by_dt)})"
+	else:
+		msg = (
+			f"{draft_total} draft document(s) before cutoff ({', '.join(by_dt)}). "
+			"Submit or Cancel them, or tick Ignore drafts."
+		)
+	add("PRE-002", ok, msg, {"drafts": draft_total, "by_doctype": by_dt})
 
 
-def _check_repost(add):
-	# PRE-003: only truly pending jobs (exclude Completed submitted docs)
-	pending = 0
+def _check_repost(add, ignore_failed=False):
+	active = 0
+	failed_or_draft = 0
+	parts = []
 	for dt in ("Repost Accounting Ledger", "Repost Item Valuation"):
 		if not frappe.db.exists("DocType", dt):
 			continue
 		try:
-			pending += cint(frappe.db.count(dt, {"docstatus": 0}))
-			pending += cint(
-				frappe.db.count(
-					dt,
-					{
-						"docstatus": 1,
-						"status": ["in", ["Queued", "In Progress", "Failed"]],
-					},
-				)
+			drafts = cint(frappe.db.count(dt, {"docstatus": 0}))
+			queued = cint(
+				frappe.db.count(dt, {"docstatus": 1, "status": ["in", ["Queued", "In Progress"]]})
 			)
+			failed = cint(frappe.db.count(dt, {"docstatus": 1, "status": "Failed"}))
+			active += queued
+			failed_or_draft += drafts + failed
+			if drafts or queued or failed:
+				parts.append(f"{dt}: {queued} running, {failed} failed, {drafts} draft")
 		except Exception:
 			pass
+	ok = active == 0 and (failed_or_draft == 0 or ignore_failed)
+	if active:
+		msg = (
+			f"{active} repost job(s) still Queued/In Progress"
+			+ (f" ({'; '.join(parts)})" if parts else "")
+			+ ". Wait for them to finish or cancel them in Stock / Accounts."
+		)
+	elif failed_or_draft and not ignore_failed:
+		msg = (
+			f"{failed_or_draft} failed or draft repost job(s)"
+			+ (f" ({'; '.join(parts)})" if parts else "")
+			+ ". Retry or cancel them, or tick Ignore failed/draft reposts."
+		)
+	elif failed_or_draft and ignore_failed:
+		msg = f"Ignoring {failed_or_draft} failed/draft repost(s)" + (
+			f" ({'; '.join(parts)})" if parts else ""
+		)
+	else:
+		msg = "No pending repost jobs"
 	add(
 		"PRE-003",
-		pending == 0,
-		"No pending repost jobs" if pending == 0 else f"{pending} pending repost job(s)",
+		ok,
+		msg,
+		{"active": active, "failed_or_draft": failed_or_draft, "detail": parts},
 	)
 
 

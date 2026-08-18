@@ -197,7 +197,13 @@ def _spawn_engine_call(python_stmt: str) -> int:
 
 
 @frappe.whitelist()
-def confirm_archive(confirmation, fiscal_year=None, run_now=0):
+def confirm_archive(
+	confirmation,
+	fiscal_year=None,
+	run_now=0,
+	ignore_drafts=0,
+	ignore_failed_reposts=0,
+):
 	"""Start archive after typed confirmation. Run now detaches from the HTTP request."""
 	_check_manager()
 	settings = engine.get_settings()
@@ -212,9 +218,17 @@ def confirm_archive(confirmation, fiscal_year=None, run_now=0):
 	else:
 		cutoff = settings.cutoff_date or engine.compute_cutoff_date(settings)
 
+	ignore_drafts = bool(int(ignore_drafts or 0))
+	ignore_failed_reposts = bool(int(ignore_failed_reposts or 0))
 	require_backup = bool(getattr(settings, "require_backup_before_archive", 1))
 	try:
-		preflight.run_preflight(settings, cutoff, require_backup=require_backup)
+		preflight.run_preflight(
+			settings,
+			cutoff,
+			require_backup=require_backup,
+			ignore_drafts=ignore_drafts,
+			ignore_failed_reposts=ignore_failed_reposts,
+		)
 	except preflight.PreflightError as exc:
 		frappe.throw(str(exc))
 
@@ -234,12 +248,15 @@ def confirm_archive(confirmation, fiscal_year=None, run_now=0):
 		try:
 			pid = _spawn_engine_call(
 				"from erpnext_data_archiver.archiver.engine import run_archive; "
-				f"run_archive(run_name={run.name!r})"
+				f"run_archive(run_name={run.name!r}, ignore_drafts={ignore_drafts}, "
+				f"ignore_failed_reposts={ignore_failed_reposts})"
 			)
 		except Exception as exc:
 			frappe.enqueue(
 				"erpnext_data_archiver.archiver.engine.run_archive",
 				run_name=run.name,
+				ignore_drafts=ignore_drafts,
+				ignore_failed_reposts=ignore_failed_reposts,
 				queue="long",
 				timeout=4 * 60 * 60,
 				job_name="erpnext_data_archiver.run_archive",
@@ -271,6 +288,8 @@ def confirm_archive(confirmation, fiscal_year=None, run_now=0):
 	frappe.enqueue(
 		"erpnext_data_archiver.archiver.engine.run_archive",
 		run_name=run.name,
+		ignore_drafts=ignore_drafts,
+		ignore_failed_reposts=ignore_failed_reposts,
 		queue="long",
 		timeout=4 * 60 * 60,
 		job_name="erpnext_data_archiver.run_archive",

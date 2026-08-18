@@ -262,7 +262,13 @@ def _set_run_status(run, status):
 # Archival run
 # ---------------------------------------------------------------------------
 
-def run_archive(run_name=None, confirmation_token=None, skip_preflight=False):
+def run_archive(
+	run_name=None,
+	confirmation_token=None,
+	skip_preflight=False,
+	ignore_drafts=False,
+	ignore_failed_reposts=False,
+):
 	"""Full Dagaar workflow: validate → snapshot → move → reconcile."""
 	ensure_mariadb()
 	settings = get_settings()
@@ -295,7 +301,12 @@ def run_archive(run_name=None, confirmation_token=None, skip_preflight=False):
 				_set_run_status(run, "Validating")
 				if not skip_preflight:
 					report = preflight.run_preflight(
-						settings, cutoff, exclude_run=run.name
+						settings,
+						cutoff,
+						require_backup=bool(getattr(settings, "require_backup_before_archive", 1)),
+						exclude_run=run.name,
+						ignore_drafts=bool(ignore_drafts),
+						ignore_failed_reposts=bool(ignore_failed_reposts),
 					)
 					run.preflight_report = json.dumps(report, default=str, indent=2)
 					run.save(ignore_permissions=True)

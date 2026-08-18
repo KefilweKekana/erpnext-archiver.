@@ -464,6 +464,18 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 					label: __("Run now (do not wait for a background worker)"),
 					default: 1,
 				},
+				{
+					fieldname: "ignore_drafts",
+					fieldtype: "Check",
+					label: __("Ignore old drafts (they stay in live tables)"),
+					default: 0,
+				},
+				{
+					fieldname: "ignore_failed_reposts",
+					fieldtype: "Check",
+					label: __("Ignore failed/draft reposts (not jobs still running)"),
+					default: 0,
+				},
 			],
 			primary_action_label: __("Start Archive"),
 			primary_action(values) {
@@ -478,6 +490,8 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 						confirmation: values.confirmation,
 						fiscal_year: values.fiscal_year,
 						run_now,
+						ignore_drafts: cint(values.ignore_drafts),
+						ignore_failed_reposts: cint(values.ignore_failed_reposts),
 					},
 					callback(r) {
 						const m = (r && r.message) || {};
