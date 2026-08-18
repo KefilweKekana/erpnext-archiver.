@@ -195,9 +195,14 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 			clearTimeout(state.poll_timer);
 			state.poll_timer = null;
 		}
-		const active = state.data && state.data.active_run;
-		if (active) {
-			state.poll_timer = setTimeout(refresh, 5000);
+		const run = state.data && (state.data.active_run || state.data.last_run);
+		const running =
+			run &&
+			["Draft", "Validating", "Snapshotting", "Moving", "Reconciling", "Recovering", "In Progress"].includes(
+				run.status
+			);
+		if (running) {
+			state.poll_timer = setTimeout(refresh, 4000);
 		}
 	}
 
@@ -400,17 +405,39 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 			</p>`;
 		}
 
+		function start_warning_html() {
+			const bits = [];
+			if (state.data && !state.data.enabled) {
+				bits.push(
+					`<p class="text-danger" style="margin:0 0 8px"><b>${__(
+						"Archiving is disabled."
+					)}</b> ${__("Turn on Enabled in Archive Settings first.")}</p>`
+				);
+			}
+			if (state.data && state.data.require_backup && !state.data.backup_ready) {
+				bits.push(
+					`<p class="text-danger" style="margin:0 0 8px"><b>${__(
+						"Backup reference missing."
+					)}</b> ${__(
+						"In Archive Settings, fill Last Backup ID and Last Backup Checksum, or untick Require Backup Reference."
+					)}</p>`
+				);
+			}
+			bits.push(`<p class="text-muted" style="margin:0 0 8px">
+				${__(
+					"Choose the last closed year to archive. Everything through the end of that year leaves live tables. Newer years stay live."
+				)}
+			</p>`);
+			return bits.join("");
+		}
+
 		const d = new frappe.ui.Dialog({
 			title: __("Archive a Fiscal Year"),
 			fields: [
 				{
 					fieldname: "help",
 					fieldtype: "HTML",
-					options: `<p class="text-muted" style="margin:0 0 8px">
-						${__(
-							"Choose the last closed year to archive. Everything through the end of that year leaves live tables. Newer years stay live."
-						)}
-					</p>`,
+					options: start_warning_html(),
 				},
 				{
 					fieldname: "fiscal_year",
@@ -442,34 +469,48 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 			primary_action(values) {
 				const run_now = cint(values.run_now);
 				d.disable_primary_action();
-				frappe
-					.call({
-						method: "erpnext_data_archiver.api.confirm_archive",
-						freeze: true,
-						freeze_message: run_now
-							? __("Archiving now. This can take a few minutes.")
-							: __("Queuing archive…"),
-						timeout: run_now ? 600000 : 120000,
-						args: {
-							confirmation: values.confirmation,
-							fiscal_year: values.fiscal_year,
-							run_now,
-						},
-					})
-					.then((r) => {
+				frappe.call({
+					method: "erpnext_data_archiver.api.confirm_archive",
+					freeze: true,
+					freeze_message: __("Starting archive…"),
+					timeout: 120000,
+					args: {
+						confirmation: values.confirmation,
+						fiscal_year: values.fiscal_year,
+						run_now,
+					},
+					callback(r) {
 						const m = (r && r.message) || {};
+						if (!m.ok && r.exc) {
+							d.enable_primary_action();
+							return;
+						}
 						frappe.show_alert({
-							message:
-								m.message ||
-								(m.queued
-									? __("Archive run queued for {0}", [values.fiscal_year])
-									: __("Archive completed for {0}", [values.fiscal_year])),
+							message: m.message || __("Archive started"),
 							indicator: "green",
 						});
 						d.hide();
 						refresh();
-					})
-					.finally(() => d.enable_primary_action());
+					},
+					error(err) {
+						d.enable_primary_action();
+						let msg = __("Archive could not start.");
+						try {
+							if (err && err.message) msg = err.message;
+							const server = (err && err._server_messages) || frappe.last_response;
+							if (typeof server === "string" && server.length) {
+								msg = server;
+							}
+						} catch (e) {
+							/* keep default */
+						}
+						frappe.msgprint({
+							title: __("Archive did not start"),
+							message: msg,
+							indicator: "red",
+						});
+					},
+				});
 			},
 		});
 		d.fields_dict.fiscal_year.$input.on("change", () => {
