@@ -310,6 +310,9 @@ def skip_queued_reposts() -> list[str]:
 	if skipped:
 		frappe.db.commit()
 	return skipped
+
+
+def _estimate_rows(cutoff) -> int:
 	try:
 		return preview_counts(cutoff)["total_rows"]
 	except Exception:
