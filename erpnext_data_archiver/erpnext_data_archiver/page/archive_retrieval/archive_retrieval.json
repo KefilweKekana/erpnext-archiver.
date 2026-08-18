@@ -3,7 +3,7 @@
  "docstatus": 0,
  "doctype": "Page",
  "idx": 0,
- "modified": "2026-08-14 00:00:00",
+ "modified": "2026-08-18 10:15:00",
  "modified_by": "Administrator",
  "module": "ERPNext Data Archiver",
  "name": "archive-retrieval",
@@ -20,7 +20,13 @@
    "role": "Accounts Manager"
   },
   {
-   "role": "Stock Manager"
+   "role": "Sales Manager"
+  },
+  {
+   "role": "Accounts User"
+  },
+  {
+   "role": "Sales User"
   }
  ],
  "standard": "Yes",

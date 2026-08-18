@@ -30,7 +30,7 @@ scheduler_events = {
 # Plain public CSS (no @import). Frappe esbuild copies *.bundle.css to a temp
 # dir and cannot resolve sibling imports, so do not use an import-only bundle.
 app_include_js = "/assets/erpnext_data_archiver/js/archive_indicator.js"
-app_include_css = "/assets/erpnext_data_archiver/css/archiver.css?v=1.1.5"
+app_include_css = "/assets/erpnext_data_archiver/css/archiver.css?v=1.1.6"
 
 # ---------------------------------------------------------------------------
 # Install the transparent query-rewrite layer and the report wrappers.

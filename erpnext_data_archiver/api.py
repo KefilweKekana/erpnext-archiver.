@@ -16,7 +16,13 @@ from erpnext_data_archiver.archiver.query_patch import (
 from erpnext_data_archiver.archiver.report_patches import get_patch_status
 
 MANAGER_ROLES = {"System Manager", "Archive Manager"}
-BROWSE_ROLES = MANAGER_ROLES | {"Accounts Manager", "Stock Manager"}
+BROWSE_ROLES = MANAGER_ROLES | {
+	"Accounts Manager",
+	"Stock Manager",
+	"Sales Manager",
+	"Accounts User",
+	"Sales User",
+}
 ACTIVE_RUN_STATUSES = (
 	"Draft",
 	"In Progress",
@@ -343,6 +349,26 @@ def get_diagnostics():
 	"""Which report entry points were wrapped (visible in Archive Settings)."""
 	_check_manager()
 	return get_patch_status()
+
+
+@frappe.whitelist()
+def search_archived_invoices(query, doctype="Sales Invoice"):
+	"""Find live or archived invoices for walk-in reprints."""
+	_check_browse()
+	from erpnext_data_archiver.archiver import reprint
+
+	return {"invoices": reprint.search_invoices(query, doctype=doctype)}
+
+
+@frappe.whitelist()
+def print_archived_invoice(name, doctype="Sales Invoice", print_format=None):
+	"""Print HTML for an archived (or live) sales invoice without restoring it."""
+	_check_browse()
+	from erpnext_data_archiver.archiver import reprint
+
+	result = reprint.print_invoice(name, doctype=doctype, print_format=print_format)
+	engine._audit("invoice_reprint", name, {"doctype": doctype})
+	return result
 
 
 def boot_session(bootinfo):

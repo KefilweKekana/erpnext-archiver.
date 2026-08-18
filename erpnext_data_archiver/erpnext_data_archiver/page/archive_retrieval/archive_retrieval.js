@@ -76,6 +76,32 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 				</section>
 			</div>
 
+			<section class="eda-panel eda-panel--reprint">
+				<div class="eda-panel-head">
+					<div>
+						<h3>${__("Reprint an invoice")}</h3>
+						<p class="eda-muted">
+							${__(
+								"Look up a Sales Invoice from live or archived years and print it. Nothing is restored."
+							)}
+						</p>
+					</div>
+				</div>
+				<div class="eda-reprint-bar">
+					<select class="form-control eda-reprint-doctype" style="max-width:180px">
+						<option value="Sales Invoice">${__("Sales Invoice")}</option>
+						<option value="POS Invoice">${__("POS Invoice")}</option>
+					</select>
+					<input type="text" class="form-control eda-reprint-q" placeholder="${__(
+						"Invoice number or customer"
+					)}">
+					<button type="button" class="btn btn-primary eda-reprint-search">
+						${__("Search")}
+					</button>
+				</div>
+				<div class="eda-reprint-results"></div>
+			</section>
+
 			<section class="eda-panel eda-panel--foot">
 				<div class="eda-panel-head">
 					<div>
@@ -154,6 +180,11 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 .eda-bar-value{font-size:12.5px;font-variant-numeric:tabular-nums;font-weight:650;text-align:right}
 .eda-empty{padding:22px 16px;border:1px dashed var(--eda-line);border-radius:12px;text-align:center;background:var(--eda-subtle)}
 .eda-empty-title{font-weight:700;margin-bottom:4px}
+.eda-reprint-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.eda-reprint-results{display:flex;flex-direction:column;gap:8px}
+.eda-reprint-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--eda-line);border-radius:10px;background:var(--eda-subtle)}
+.eda-reprint-name{font-weight:700;font-size:13.5px}
+.eda-reprint-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 @media (max-width:900px){.eda-hero,.eda-grid{grid-template-columns:1fr!important}.eda-bar-row{grid-template-columns:1fr 64px!important;grid-template-areas:"label value" "track track";gap:6px 10px}.eda-bar-label{grid-area:label}.eda-bar-value{grid-area:value}.eda-bar-track{grid-area:track}}
 `;
 			document.head.appendChild(style);
@@ -165,7 +196,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 		link.id = id;
 		link.rel = "stylesheet";
 		link.type = "text/css";
-		link.href = "/assets/erpnext_data_archiver/css/archiver.css?v=1.1.5";
+		link.href = "/assets/erpnext_data_archiver/css/archiver.css?v=1.1.6";
 		document.head.appendChild(link);
 	}
 
@@ -618,6 +649,115 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 			open_restore_dialog();
 		}
 	});
+
+	$main.on("click", ".eda-reprint-search", search_reprint);
+	$main.on("keydown", ".eda-reprint-q", (e) => {
+		if (e.key === "Enter") {
+			e.preventDefault();
+			search_reprint();
+		}
+	});
+	$main.on("click", ".eda-reprint-print", function () {
+		const name = $(this).data("name");
+		const doctype = $(this).data("doctype");
+		frappe.call({
+			method: "erpnext_data_archiver.api.print_archived_invoice",
+			freeze: true,
+			freeze_message: __("Preparing print…"),
+			args: { name, doctype },
+			callback(r) {
+				const m = (r && r.message) || {};
+				if (!m.html) {
+					frappe.msgprint(__("Could not build the printout."));
+					return;
+				}
+				const w = window.open("", "_blank");
+				if (!w) {
+					frappe.msgprint(__("Allow pop-ups to print."));
+					return;
+				}
+				w.document.open();
+				w.document.write(m.html);
+				w.document.close();
+				setTimeout(() => {
+					try {
+						w.focus();
+						w.print();
+					} catch (e) {
+						/* user can print from the window */
+					}
+				}, 400);
+			},
+		});
+	});
+
+	function search_reprint() {
+		const query = ($main.find(".eda-reprint-q").val() || "").trim();
+		const doctype = $main.find(".eda-reprint-doctype").val() || "Sales Invoice";
+		const $out = $main.find(".eda-reprint-results");
+		if (query.length < 2) {
+			frappe.msgprint(__("Type at least 2 characters (invoice number or customer)."));
+			return;
+		}
+		$out.html(`<div class="eda-muted">${__("Searching…")}</div>`);
+		frappe.call({
+			method: "erpnext_data_archiver.api.search_archived_invoices",
+			args: { query, doctype },
+			callback(r) {
+				const rows = ((r && r.message) || {}).invoices || [];
+				if (!rows.length) {
+					$out.html(
+						`<div class="eda-empty"><div class="eda-empty-title">${__(
+							"No invoices found"
+						)}</div><div class="eda-muted">${__(
+							"Try the full invoice number, or the customer name used on the invoice."
+						)}</div></div>`
+					);
+					return;
+				}
+				const fmt = (n) => {
+					const v = parseFloat(n);
+					if (isNaN(v)) return "";
+					try {
+						return v.toLocaleString(undefined, {
+							minimumFractionDigits: 2,
+							maximumFractionDigits: 2,
+						});
+					} catch (e) {
+						return String(v);
+					}
+				};
+				const html = rows
+					.map((row) => {
+						const src = row.source === "Archive" ? __("Archived") : __("Live");
+						const fy = row.fiscal_year
+							? frappe.utils.escape_html(row.fiscal_year)
+							: "";
+						return `<div class="eda-reprint-row">
+							<div>
+								<div class="eda-reprint-name">${frappe.utils.escape_html(row.name)}</div>
+								<div class="eda-muted">${frappe.utils.escape_html(
+									row.customer_name || row.customer || ""
+								)} · ${frappe.utils.escape_html(row.posting_date || "")}</div>
+							</div>
+							<div class="eda-reprint-meta">
+								<span class="eda-badge ${row.source === "Archive" ? "is-warn" : "is-ok"}">${src}${
+							fy ? " " + fy : ""
+						}</span>
+								<strong>${fmt(row.grand_total)}</strong>
+								<button type="button" class="btn btn-default btn-sm eda-reprint-print"
+									data-name="${frappe.utils.escape_html(row.name)}"
+									data-doctype="${frappe.utils.escape_html(doctype)}">
+									${__("Print")}
+								</button>
+							</div>
+						</div>`;
+					})
+					.join("");
+				$out.html(html);
+			},
+		});
+	}
 
 	frappe.realtime.on("eda_archive_progress", (data) => {
 		frappe.show_alert(
