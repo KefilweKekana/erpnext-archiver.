@@ -302,6 +302,10 @@
 	background: var(--eda-surface) !important;
 	border-color: rgba(36, 150, 137, 0.4) !important;
 }
+.eda-op-card.is-disabled {
+	opacity: 0.55;
+	cursor: not-allowed;
+}
 .eda-op-card:focus-visible {
 	outline: 2px solid var(--eda-accent);
 	outline-offset: 2px;

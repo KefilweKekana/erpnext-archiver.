@@ -67,25 +67,38 @@ frappe.ui.form.on("Archive Settings", {
 						label: __("Type {0} to confirm", [phrase]),
 						reqd: 1,
 					},
+					{
+						fieldname: "run_now",
+						fieldtype: "Check",
+						label: __("Run now (do not wait for a background worker)"),
+						default: 1,
+					},
 				],
 				(values) => {
+					const run_now = cint(values.run_now);
 					frappe
 						.call({
 							method: "erpnext_data_archiver.api.confirm_archive",
+							freeze: true,
+							freeze_message: run_now
+								? __("Archiving now. This can take a few minutes.")
+								: __("Queuing archive…"),
+							timeout: run_now ? 600000 : 120000,
 							args: {
 								confirmation: values.confirmation,
 								fiscal_year: frm.doc.archive_through_year,
+								run_now,
 							},
 						})
-						.then(() =>
+						.then((r) =>
 							frappe.show_alert({
-								message: __("Archive run queued"),
+								message: (r.message && r.message.message) || __("Archive started"),
 								indicator: "green",
 							})
 						);
 				},
 				__("Confirm Archive"),
-				__("Queue Archive")
+				__("Start Archive")
 			);
 		});
 

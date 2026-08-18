@@ -7,7 +7,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 
 	ensure_eda_stylesheet();
 
-	const state = { data: null, show_zero: false };
+	const state = { data: null, show_zero: false, poll_timer: null };
 	const $main = $(page.main);
 
 	$main.html(`
@@ -52,7 +52,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 					</div>
 					<p class="eda-muted" style="margin:0 0 4px">
 						${__(
-							"To archive: pick a closed fiscal year under Run archive. The year list on the left is only for reading years already archived."
+							"To archive: pick a closed fiscal year under Run archive. Leave Run now ticked so the job starts immediately. Restore is available after a run completes."
 						)}
 					</p>
 					<div class="eda-op-cards">
@@ -136,6 +136,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 .eda-toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--eda-line)}
 .eda-op-cards{display:grid!important;gap:8px;margin-top:12px}
 .eda-op-card{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:space-between!important;gap:12px;width:100%;text-align:left;padding:12px 14px!important;border-radius:11px!important;border:1px solid var(--eda-line)!important;background:var(--eda-subtle)!important;cursor:pointer}
+.eda-op-card.is-disabled{opacity:.55;cursor:not-allowed}
 .eda-op-copy{display:flex!important;flex-direction:column!important;align-items:flex-start!important;gap:2px!important;min-width:0;flex:1}
 .eda-op-title{display:block!important;width:100%;font-size:13.5px!important;font-weight:700!important;line-height:1.3!important}
 .eda-op-desc{display:block!important;width:100%;font-size:12px!important;font-weight:400!important;color:var(--eda-muted)!important;line-height:1.4!important}
@@ -164,7 +165,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 		link.id = id;
 		link.rel = "stylesheet";
 		link.type = "text/css";
-		link.href = "/assets/erpnext_data_archiver/css/archiver.css?v=1.1.3";
+		link.href = "/assets/erpnext_data_archiver/css/archiver.css?v=1.1.4";
 		document.head.appendChild(link);
 	}
 
@@ -185,7 +186,19 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 		frappe.call("erpnext_data_archiver.api.get_state").then((r) => {
 			state.data = r.message;
 			render();
+			schedule_poll();
 		});
+	}
+
+	function schedule_poll() {
+		if (state.poll_timer) {
+			clearTimeout(state.poll_timer);
+			state.poll_timer = null;
+		}
+		const active = state.data && state.data.active_run;
+		if (active) {
+			state.poll_timer = setTimeout(refresh, 5000);
+		}
 	}
 
 	function render() {
@@ -232,7 +245,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 				`<div class="eda-empty">
 					<div class="eda-empty-title">${__("Nothing archived yet")}</div>
 					<div class="eda-muted">${__(
-						"Run an archive from Archive Settings, then return here to browse history."
+						"Run an archive from Operations (Run now), or queue one and start a long-queue worker. Archived years appear here after a run completes."
 					)}</div>
 				</div>`
 			);
@@ -257,6 +270,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 
 		if (d.is_manager) {
 			$main.find(".eda-manager").show();
+			$main.find(".eda-restore").toggleClass("is-disabled", !years.length);
 			$main
 				.find(".eda-cutoff")
 				.text(
@@ -264,15 +278,19 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 						frappe.datetime.str_to_user(d.cutoff_date),
 					])
 				);
-			const lr = d.last_run;
+			const lr = d.active_run || d.last_run;
 			const $lr = $main.find(".eda-last-run");
 			if (lr) {
 				const ok = lr.status === "Completed";
+				const running = d.active_run && lr.name === d.active_run.name;
 				$lr.html(
-					`<span class="eda-badge ${ok ? "is-ok" : "is-warn"}">${frappe.utils.escape_html(
+					`<span class="eda-badge ${ok ? "is-ok" : running ? "is-warn" : "is-warn"}">${frappe.utils.escape_html(
 						lr.status
 					)}</span>` +
-						`<code class="eda-run-id">${frappe.utils.escape_html(lr.name)}</code>`
+						`<code class="eda-run-id">${frappe.utils.escape_html(lr.name)}</code>` +
+						(running
+							? `<span class="eda-muted">${__("In progress — page refreshes automatically")}</span>`
+							: "")
 				);
 			} else {
 				$lr.html(`<span class="eda-muted">${__("No runs yet")}</span>`);
@@ -413,25 +431,45 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 					label: __("Type {0} to confirm", [phrase]),
 					reqd: 1,
 				},
+				{
+					fieldname: "run_now",
+					fieldtype: "Check",
+					label: __("Run now (do not wait for a background worker)"),
+					default: 1,
+				},
 			],
-			primary_action_label: __("Queue Archive"),
+			primary_action_label: __("Start Archive"),
 			primary_action(values) {
+				const run_now = cint(values.run_now);
+				d.disable_primary_action();
 				frappe
 					.call({
 						method: "erpnext_data_archiver.api.confirm_archive",
+						freeze: true,
+						freeze_message: run_now
+							? __("Archiving now. This can take a few minutes.")
+							: __("Queuing archive…"),
+						timeout: run_now ? 600000 : 120000,
 						args: {
 							confirmation: values.confirmation,
 							fiscal_year: values.fiscal_year,
+							run_now,
 						},
 					})
-					.then(() => {
+					.then((r) => {
+						const m = (r && r.message) || {};
 						frappe.show_alert({
-							message: __("Archive run queued for {0}", [values.fiscal_year]),
+							message:
+								m.message ||
+								(m.queued
+									? __("Archive run queued for {0}", [values.fiscal_year])
+									: __("Archive completed for {0}", [values.fiscal_year])),
 							indicator: "green",
 						});
 						d.hide();
 						refresh();
-					});
+					})
+					.finally(() => d.enable_primary_action());
 			},
 		});
 		d.fields_dict.fiscal_year.$input.on("change", () => {
@@ -442,7 +480,14 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 
 	function open_restore_dialog() {
 		const years = (state.data.archived_years || []).map((y) => y.fiscal_year);
-		if (!years.length) return;
+		if (!years.length) {
+			frappe.msgprint(
+				__(
+					"Nothing to restore yet. Complete an archive run first — queued jobs do not create archived years until a worker finishes them."
+				)
+			);
+			return;
+		}
 		const d = new frappe.ui.Dialog({
 			title: __("Restore a Fiscal Year"),
 			fields: [
@@ -454,40 +499,56 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 					default: years[0],
 					reqd: 1,
 				},
+				{
+					fieldname: "run_now",
+					fieldtype: "Check",
+					label: __("Run now (do not wait for a background worker)"),
+					default: 1,
+				},
 			],
 			primary_action_label: __("Preview & Restore"),
 			primary_action: (values) => {
+				const run_now = cint(values.run_now);
+				d.disable_primary_action();
 				frappe.call("erpnext_data_archiver.api.preview_restore", values).then((r) => {
 					const p = r.message || {};
+					const finish = (force) =>
+						frappe
+							.call({
+								method: "erpnext_data_archiver.api.restore_year",
+								freeze: true,
+								freeze_message: run_now
+									? __("Restoring {0}…", [values.fiscal_year])
+									: __("Queuing restore…"),
+								timeout: run_now ? 600000 : 120000,
+								args: {
+									fiscal_year: values.fiscal_year,
+									force: force || 0,
+									run_now,
+								},
+							})
+							.then((res) => {
+								const m = (res && res.message) || {};
+								frappe.show_alert({
+									message: m.message || __("Restore started"),
+									indicator: "green",
+								});
+								d.hide();
+								refresh();
+							})
+							.catch(() => d.enable_primary_action());
 					if (!p.ok) {
 						frappe.confirm(
 							__(
 								"Collisions detected with live documents. Force restore (INSERT IGNORE) anyway?"
 							),
-							() =>
-								frappe
-									.call("erpnext_data_archiver.api.restore_year", {
-										fiscal_year: values.fiscal_year,
-										force: 1,
-									})
-									.then(() => {
-										frappe.show_alert({
-											message: __("Restore queued"),
-											indicator: "green",
-										});
-										d.hide();
-									})
+							() => finish(1),
+							() => d.enable_primary_action()
 						);
 						return;
 					}
-					frappe.call("erpnext_data_archiver.api.restore_year", values).then(() => {
-						frappe.show_alert({
-							message: __("Restore queued"),
-							indicator: "green",
-						});
-						d.hide();
-					});
-				});
+					finish(0);
+				}).catch(() => d.enable_primary_action());
 			},
 		});
 		d.show();

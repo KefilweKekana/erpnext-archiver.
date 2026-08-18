@@ -32,7 +32,7 @@ scheduler_events = {
 app_include_js = "/assets/erpnext_data_archiver/js/archive_indicator.js"
 app_include_css = [
 	"erpnext_data_archiver.bundle.css",
-	"/assets/erpnext_data_archiver/css/archiver.css?v=1.1.3",
+	"/assets/erpnext_data_archiver/css/archiver.css?v=1.1.4",
 ]
 
 # ---------------------------------------------------------------------------

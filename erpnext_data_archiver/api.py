@@ -13,6 +13,14 @@ from erpnext_data_archiver.archiver.report_patches import get_patch_status
 
 MANAGER_ROLES = {"System Manager", "Archive Manager"}
 BROWSE_ROLES = MANAGER_ROLES | {"Accounts Manager", "Stock Manager"}
+ACTIVE_RUN_STATUSES = (
+	"In Progress",
+	"Validating",
+	"Snapshotting",
+	"Moving",
+	"Reconciling",
+	"Recovering",
+)
 
 
 def _check_manager():
@@ -44,6 +52,7 @@ def get_state():
 		"session_years": get_session_years(),
 		"live_tables": engine.get_live_table_stats(),
 		"last_run": _last_run(),
+		"active_run": _active_run(),
 		"is_manager": bool(MANAGER_ROLES.intersection(set(frappe.get_roles()))),
 		"backup_id": getattr(settings, "last_backup_id", None),
 		"confirmation_phrase": getattr(settings, "confirmation_phrase", None) or "ARCHIVE",
@@ -64,6 +73,17 @@ def _last_run():
 	rows = frappe.get_all(
 		"Archive Run",
 		fields=["name", "status", "cutoff_date", "started_on", "completed_on"],
+		order_by="creation desc",
+		limit=1,
+	)
+	return rows[0] if rows else None
+
+
+def _active_run():
+	rows = frappe.get_all(
+		"Archive Run",
+		filters={"status": ["in", list(ACTIVE_RUN_STATUSES)]},
+		fields=["name", "status", "cutoff_date", "started_on"],
 		order_by="creation desc",
 		limit=1,
 	)
@@ -129,8 +149,8 @@ def preview_archive(fiscal_year=None):
 
 
 @frappe.whitelist()
-def confirm_archive(confirmation, fiscal_year=None):
-	"""Enqueue archive after typed confirmation phrase matches settings."""
+def confirm_archive(confirmation, fiscal_year=None, run_now=0):
+	"""Queue or run archive after typed confirmation phrase matches settings."""
 	_check_manager()
 	settings = engine.get_settings()
 	phrase = (getattr(settings, "confirmation_phrase", None) or "ARCHIVE").strip()
@@ -147,6 +167,22 @@ def confirm_archive(confirmation, fiscal_year=None):
 	require_backup = bool(getattr(settings, "require_backup_before_archive", 1))
 	preflight.run_preflight(settings, cutoff, require_backup=require_backup)
 
+	fy = fiscal_year or getattr(settings, "archive_through_year", None)
+	audit_detail = {"cutoff": str(cutoff), "fiscal_year": fy}
+
+	if int(run_now or 0):
+		run_name = engine.run_archive()
+		engine._audit("archive_completed_now", frappe.session.user, {**audit_detail, "run": run_name})
+		return {
+			"ok": True,
+			"queued": False,
+			"run_name": run_name,
+			"message": f"Archive run {run_name} completed.",
+			"cutoff_date": str(cutoff),
+			"fiscal_year": fy,
+			"archived_years": engine.get_archived_year_stats(),
+		}
+
 	frappe.enqueue(
 		"erpnext_data_archiver.archiver.engine.run_archive",
 		queue="long",
@@ -154,26 +190,23 @@ def confirm_archive(confirmation, fiscal_year=None):
 		job_name="erpnext_data_archiver.run_archive",
 		enqueue_after_commit=True,
 	)
-	engine._audit(
-		"archive_queued",
-		frappe.session.user,
-		{
-			"cutoff": str(cutoff),
-			"fiscal_year": fiscal_year or getattr(settings, "archive_through_year", None),
-		},
-	)
+	engine._audit("archive_queued", frappe.session.user, audit_detail)
 	return {
 		"ok": True,
-		"message": "Archive run queued in the background.",
+		"queued": True,
+		"message": "Archive run queued in the background. Start a long-queue worker or use Run now.",
 		"cutoff_date": str(cutoff),
-		"fiscal_year": fiscal_year or getattr(settings, "archive_through_year", None),
+		"fiscal_year": fy,
 	}
 
 
 @frappe.whitelist()
 def run_archive_now(confirmation=None):
-	"""Backward-compatible entry; requires confirmation when phrase is set."""
-	return confirm_archive(confirmation or getattr(engine.get_settings(), "confirmation_phrase", "ARCHIVE"))
+	"""Run archive immediately. Confirmation still required when a phrase is set."""
+	return confirm_archive(
+		confirmation or getattr(engine.get_settings(), "confirmation_phrase", "ARCHIVE"),
+		run_now=1,
+	)
 
 
 @frappe.whitelist()
@@ -185,8 +218,8 @@ def preview_restore(fiscal_year):
 
 
 @frappe.whitelist()
-def restore_year(fiscal_year, force=0):
-	"""Enqueue a restore of one archived fiscal year into the live tables."""
+def restore_year(fiscal_year, force=0, run_now=0):
+	"""Queue or run a restore of one archived fiscal year into the live tables."""
 	_check_manager()
 	if not fiscal_year:
 		frappe.throw("fiscal_year is required")
@@ -194,6 +227,17 @@ def restore_year(fiscal_year, force=0):
 	preview = engine.preview_restore(fiscal_year)
 	if not preview.get("ok") and not force:
 		return {"ok": False, "blocked": True, "preview": preview}
+
+	if int(run_now or 0):
+		engine.restore_fiscal_year(fiscal_year, force=bool(force))
+		engine._audit("restore_completed_now", fiscal_year, {"force": bool(force)})
+		return {
+			"ok": True,
+			"queued": False,
+			"message": f"Restore of {fiscal_year} completed.",
+			"preview": preview,
+			"archived_years": engine.get_archived_year_stats(),
+		}
 
 	frappe.enqueue(
 		"erpnext_data_archiver.archiver.engine.restore_fiscal_year",
@@ -205,7 +249,12 @@ def restore_year(fiscal_year, force=0):
 		enqueue_after_commit=True,
 	)
 	engine._audit("restore_queued", fiscal_year, {"force": bool(force)})
-	return {"ok": True, "message": f"Restore of {fiscal_year} queued.", "preview": preview}
+	return {
+		"ok": True,
+		"queued": True,
+		"message": f"Restore of {fiscal_year} queued. Start a long-queue worker or use Run now.",
+		"preview": preview,
+	}
 
 
 @frappe.whitelist()
