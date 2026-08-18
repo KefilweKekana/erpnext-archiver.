@@ -9,6 +9,7 @@ archives. Only MariaDB/MySQL is supported.
 from __future__ import annotations
 
 import json
+import time
 
 import frappe
 from frappe.utils import add_days, cint, getdate, now, now_datetime
@@ -771,6 +772,80 @@ def _compute_stock_snapshots():
 # Restore
 # ---------------------------------------------------------------------------
 
+def _is_retryable_db_error(exc) -> bool:
+	text = str(exc).lower()
+	return any(
+		token in text
+		for token in (
+			"deadlock",
+			"lock wait timeout",
+			"1213",
+			"1205",
+			"try restarting transaction",
+		)
+	)
+
+
+def _sql_retry(fn, attempts=8):
+	"""Retry a short write batch after InnoDB deadlock / lock wait timeout."""
+	last = None
+	for i in range(attempts):
+		try:
+			return fn()
+		except Exception as exc:
+			last = exc
+			if not _is_retryable_db_error(exc) or i == attempts - 1:
+				raise
+			try:
+				frappe.db.rollback()
+			except Exception:
+				pass
+			time.sleep(min(8.0, 0.25 * (2 ** i)))
+	raise last
+
+
+RESTORE_STATUS_KEY = "eda_restore_status"
+
+
+def _restore_status_cache_key():
+	return RESTORE_STATUS_KEY + ":" + frappe.local.site
+
+
+def set_restore_status(data: dict | None):
+	cache = frappe.cache()
+	key = _restore_status_cache_key()
+	if not data:
+		cache.delete_value(key)
+		return
+	cache.set_value(key, data, expires_in_sec=6 * 60 * 60)
+
+
+def get_restore_status():
+	try:
+		return frappe.cache().get_value(_restore_status_cache_key())
+	except Exception:
+		return None
+
+
+def _prepare_restore_session():
+	"""Shorter locks so Desk reads are not blocked for minutes."""
+	try:
+		frappe.db.sql("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
+		frappe.db.sql("SET SESSION innodb_lock_wait_timeout = 15")
+	except Exception:
+		pass
+
+
+def _publish_restore_progress(fiscal_year, doctype, rows):
+	try:
+		frappe.publish_realtime(
+			"eda_restore_progress",
+			{"fiscal_year": fiscal_year, "doctype": doctype, "rows": rows},
+		)
+	except Exception:
+		pass
+
+
 def preview_restore(fiscal_year) -> dict:
 	"""Dry-run collision report for restore."""
 	ensure_mariadb()
@@ -816,7 +891,15 @@ def restore_fiscal_year(fiscal_year, force=False):
 	if not preflight.acquire_job_lock(lock_owner):
 		frappe.throw("Another archive/restore job holds the exclusive lock.")
 
+	set_restore_status(
+		{
+			"status": "In Progress",
+			"fiscal_year": fiscal_year,
+			"message": "Starting restore",
+		}
+	)
 	try:
+		_prepare_restore_session()
 		preview = preview_restore(fiscal_year)
 		if not preview["ok"] and not force:
 			frappe.throw(
@@ -825,15 +908,25 @@ def restore_fiscal_year(fiscal_year, force=False):
 				+ json.dumps(preview["collisions"][:5], default=str)
 			)
 
+		batch_size = cint(getattr(get_settings(), "batch_size", None)) or 2000
 		with bypass_archives():
 			for rule in get_enabled_rules():
-				# Children first? Parents first then children for insert; parents first is fine
-				# if children reference parent by name without FK enforcement.
 				for dt in expanded_rule_doctypes(rule):
-					_restore_doctype(dt, fiscal_year, allow_ignore=force)
+					set_restore_status(
+						{
+							"status": "In Progress",
+							"fiscal_year": fiscal_year,
+							"doctype": dt,
+							"message": f"Restoring {dt}",
+						}
+					)
+					moved = _restore_doctype(
+						dt, fiscal_year, allow_ignore=force, batch_size=batch_size
+					)
+					if moved:
+						_publish_restore_progress(fiscal_year, dt, moved)
 					frappe.db.commit()
 
-			# Drop openings keyed to this FY end+1, then rebuild for the live cutoff
 			_clear_openings_for_fiscal_year(fiscal_year)
 			live_cutoff = get_archive_cutoff()
 			opening_state.rebuild_opening_state(live_cutoff, archive_run=f"restore:{fiscal_year}")
@@ -842,6 +935,23 @@ def restore_fiscal_year(fiscal_year, force=False):
 				frappe.delete_doc("Archived Fiscal Year", fiscal_year, ignore_permissions=True)
 			frappe.db.commit()
 			_audit("restore_completed", fiscal_year, preview)
+		set_restore_status(
+			{
+				"status": "Completed",
+				"fiscal_year": fiscal_year,
+				"message": f"Restore of {fiscal_year} completed",
+			}
+		)
+	except Exception as exc:
+		set_restore_status(
+			{
+				"status": "Failed",
+				"fiscal_year": fiscal_year,
+				"error": str(exc)[:500],
+				"message": "Restore failed",
+			}
+		)
+		raise
 	finally:
 		preflight.release_job_lock(lock_owner)
 		clear_metadata_cache()
@@ -869,33 +979,68 @@ def _clear_openings_for_fiscal_year(fiscal_year):
 			opening_state.clear_opening_state_for_cutoff(cutoff)
 
 
-def _restore_doctype(doctype, fiscal_year, allow_ignore=False):
+def _restore_doctype(doctype, fiscal_year, allow_ignore=False, batch_size=2000):
+	"""Copy archive rows back in small commits so Desk is not locked out."""
 	live = "tab" + doctype
 	arch = archive_table_name(doctype)
 	if not _table_exists(live) or not _table_exists(arch):
-		return
+		return 0
 	cols = _live_columns(live)
 	cols = [c for c in cols if c not in ("archived_on", "archive_run", "fiscal_year_archived")]
+	if not cols:
+		return 0
 	col_sql = ", ".join(f"`{c}`" for c in cols)
 	verb = "INSERT IGNORE" if allow_ignore else "INSERT"
-	frappe.db.sql(
-		f"{verb} INTO `{live}` ({col_sql})"
-		f" SELECT {col_sql} FROM `{arch}` WHERE `fiscal_year_archived` = %s",
-		(fiscal_year,),
-	)
-	if allow_ignore:
-		# Only remove archive rows that actually landed in live (collisions stay archived).
-		frappe.db.sql(
-			f"DELETE `a` FROM `{arch}` `a`"
-			f" INNER JOIN `{live}` `l` ON `l`.`name` = `a`.`name`"
-			f" WHERE `a`.`fiscal_year_archived` = %s",
-			(fiscal_year,),
-		)
-	else:
-		frappe.db.sql(
-			f"DELETE FROM `{arch}` WHERE `fiscal_year_archived` = %s",
-			(fiscal_year,),
-		)
+	batch_size = max(200, min(cint(batch_size) or 2000, 5000))
+	total = 0
+	while True:
+		names = [
+			r[0]
+			for r in frappe.db.sql(
+				f"SELECT `name` FROM `{arch}` WHERE `fiscal_year_archived` = %s"
+				f" ORDER BY `name` LIMIT %s",
+				(fiscal_year, batch_size),
+			)
+		]
+		if not names:
+			break
+		placeholders = ", ".join(["%s"] * len(names))
+
+		def _batch(chunk=names):
+			if not allow_ignore:
+				existing = frappe.db.sql(
+					f"SELECT `name` FROM `{live}` WHERE `name` IN ({placeholders}) LIMIT 1",
+					chunk,
+				)
+				if existing:
+					frappe.throw(
+						f"Restore blocked: {doctype} {existing[0][0]} already exists in live tables."
+					)
+			frappe.db.sql(
+				f"{verb} INTO `{live}` ({col_sql})"
+				f" SELECT {col_sql} FROM `{arch}` WHERE `name` IN ({placeholders})",
+				chunk,
+			)
+			frappe.db.sql(
+				f"DELETE FROM `{arch}` WHERE `name` IN ({placeholders})",
+				chunk,
+			)
+
+		_sql_retry(_batch)
+		frappe.db.commit()
+		total += len(names)
+		if total % (batch_size * 5) == 0:
+			set_restore_status(
+				{
+					"status": "In Progress",
+					"fiscal_year": fiscal_year,
+					"doctype": doctype,
+					"rows": total,
+					"message": f"Restoring {doctype} ({total} rows)",
+				}
+			)
+			_publish_restore_progress(fiscal_year, doctype, total)
+	return total
 
 
 # ---------------------------------------------------------------------------

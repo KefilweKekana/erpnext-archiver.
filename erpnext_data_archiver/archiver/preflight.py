@@ -26,6 +26,12 @@ def acquire_job_lock(owner: str, ttl: int = 6 * 60 * 60) -> bool:
 	return True
 
 
+def get_job_lock_owner() -> str | None:
+	cache = frappe.cache()
+	key = LOCK_KEY + ":" + frappe.local.site
+	return cache.get_value(key)
+
+
 def release_job_lock(owner: str) -> None:
 	cache = frappe.cache()
 	key = LOCK_KEY + ":" + frappe.local.site

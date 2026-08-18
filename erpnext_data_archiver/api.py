@@ -52,7 +52,14 @@ def get_state():
 	"""Everything the retrieval page needs in one round trip."""
 	_check_browse()
 	settings = engine.get_settings()
-	archived_years = engine.get_archived_year_stats()
+	restore = engine.get_restore_status() or {}
+	restore_busy = restore.get("status") == "In Progress"
+	if restore_busy:
+		archived_years = []
+		live_tables = []
+	else:
+		archived_years = engine.get_archived_year_stats()
+		live_tables = engine.get_live_table_stats()
 	require_backup = bool(getattr(settings, "require_backup_before_archive", 1))
 	backup_ready = bool(
 		getattr(settings, "last_backup_id", None) and getattr(settings, "last_backup_checksum", None)
@@ -64,12 +71,14 @@ def get_state():
 		"backup_ready": backup_ready,
 		"cutoff_date": str(settings.cutoff_date or engine.compute_cutoff_date(settings)),
 		"archive_through_year": getattr(settings, "archive_through_year", None),
-		"archivable_years": engine.get_archivable_years(),
+		"archivable_years": [] if restore_busy else engine.get_archivable_years(),
 		"archived_years": archived_years,
 		"session_years": get_session_years(),
-		"live_tables": engine.get_live_table_stats(),
+		"live_tables": live_tables,
 		"last_run": _last_run(),
 		"active_run": _active_run(),
+		"active_restore": restore,
+		"job_lock": preflight.get_job_lock_owner(),
 		"is_manager": bool(MANAGER_ROLES.intersection(set(frappe.get_roles()))),
 		"backup_id": getattr(settings, "last_backup_id", None),
 		"confirmation_phrase": getattr(settings, "confirmation_phrase", None) or "ARCHIVE",
@@ -291,7 +300,7 @@ def preview_restore(fiscal_year):
 
 @frappe.whitelist()
 def restore_year(fiscal_year, force=0, run_now=0):
-	"""Queue or run a restore of one archived fiscal year into the live tables."""
+	"""Start restore of one archived fiscal year in a detached process."""
 	_check_manager()
 	if not fiscal_year:
 		frappe.throw("fiscal_year is required")
@@ -300,31 +309,39 @@ def restore_year(fiscal_year, force=0, run_now=0):
 	if not preview.get("ok") and not force:
 		return {"ok": False, "blocked": True, "preview": preview}
 
-	if int(run_now or 0):
-		engine.restore_fiscal_year(fiscal_year, force=bool(force))
-		engine._audit("restore_completed_now", fiscal_year, {"force": bool(force)})
-		return {
-			"ok": True,
-			"queued": False,
-			"message": f"Restore of {fiscal_year} completed.",
-			"preview": preview,
-			"archived_years": engine.get_archived_year_stats(),
-		}
+	lock_owner = f"restore:{fiscal_year}"
+	if not preflight.acquire_job_lock(lock_owner):
+		frappe.throw("Another archive or restore job is already running.")
 
-	frappe.enqueue(
-		"erpnext_data_archiver.archiver.engine.restore_fiscal_year",
-		fiscal_year=fiscal_year,
-		force=bool(force),
-		queue="long",
-		timeout=4 * 60 * 60,
-		job_name=f"erpnext_data_archiver.restore.{fiscal_year}",
-		enqueue_after_commit=True,
+	engine.set_restore_status(
+		{
+			"status": "In Progress",
+			"fiscal_year": fiscal_year,
+			"message": "Starting restore",
+		}
 	)
-	engine._audit("restore_queued", fiscal_year, {"force": bool(force)})
+	try:
+		pid = _spawn_engine_call(
+			"from erpnext_data_archiver.archiver.engine import restore_fiscal_year; "
+			f"restore_fiscal_year({fiscal_year!r}, force={bool(force)})"
+		)
+	except Exception as exc:
+		preflight.release_job_lock(lock_owner)
+		engine.set_restore_status(
+			{"status": "Failed", "fiscal_year": fiscal_year, "error": str(exc)[:500]}
+		)
+		frappe.throw(f"Could not start restore process: {exc}")
+
+	engine._audit("restore_started", fiscal_year, {"force": bool(force), "pid": pid})
+	frappe.db.commit()
 	return {
 		"ok": True,
-		"queued": True,
-		"message": f"Restore of {fiscal_year} queued. Start a long-queue worker or use Run now.",
+		"queued": False,
+		"started": True,
+		"message": (
+			f"Restore of {fiscal_year} started. Keep this page open — "
+			"it can take a while on large years. Desk stays usable while it runs."
+		),
 		"preview": preview,
 	}
 

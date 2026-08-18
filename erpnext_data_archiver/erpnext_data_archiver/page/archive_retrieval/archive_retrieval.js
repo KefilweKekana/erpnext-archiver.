@@ -234,11 +234,14 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 			state.poll_timer = null;
 		}
 		const run = state.data && (state.data.active_run || state.data.last_run);
+		const restoring =
+			state.data && state.data.active_restore && state.data.active_restore.status === "In Progress";
 		const running =
-			run &&
-			["Draft", "Validating", "Snapshotting", "Moving", "Reconciling", "Recovering", "In Progress"].includes(
-				run.status
-			);
+			(run &&
+				["Draft", "Validating", "Snapshotting", "Moving", "Reconciling", "Recovering", "In Progress"].includes(
+					run.status
+				)) ||
+			restoring;
 		if (running) {
 			state.poll_timer = setTimeout(refresh, 4000);
 		}
@@ -249,9 +252,38 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 		if (!d) return;
 
 		const active = d.session_years || [];
+		const restoring = d.active_restore && d.active_restore.status === "In Progress";
 		const $status = $main.find(".eda-status");
 
-		if (active.length) {
+		if (restoring) {
+			const fy = frappe.utils.escape_html(d.active_restore.fiscal_year || "");
+			const detail = frappe.utils.escape_html(
+				d.active_restore.message || d.active_restore.doctype || __("Copying rows back to live tables")
+			);
+			$status
+				.show()
+				.removeClass("is-live")
+				.addClass("is-archive")
+				.html(
+					`<span class="eda-pulse"></span>` +
+						`<div><strong>${__("Restore in progress")} ${fy}</strong>` +
+						`<div class="eda-status-detail">${detail}. ${__(
+							"Keep this page open. Do not start another restore or archive."
+						)}</div></div>`
+				);
+		} else if (d.active_restore && d.active_restore.status === "Failed") {
+			$status
+				.show()
+				.removeClass("is-live")
+				.addClass("is-archive")
+				.html(
+					`<span class="eda-pulse"></span>` +
+						`<div><strong>${__("Restore failed")}</strong>` +
+						`<div class="eda-status-detail">${frappe.utils.escape_html(
+							d.active_restore.error || d.active_restore.message || ""
+						)}</div></div>`
+				);
+		} else if (active.length) {
 			$status
 				.show()
 				.removeClass("is-live")
@@ -283,7 +315,17 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 			.text(years.length ? __("{0} available", [years.length]) : __("None yet"));
 
 		const $years = $main.find(".eda-years").empty();
-		if (!years.length) {
+		if (restoring) {
+			$years.html(
+				`<div class="eda-empty">
+					<div class="eda-empty-title">${__("Restore running")}</div>
+					<div class="eda-muted">${__(
+						"Archived-year counts are paused until restore finishes, so this page does not deadlock the database."
+					)}</div>
+				</div>`
+			);
+			$main.find(".eda-activate").prop("disabled", true);
+		} else if (!years.length) {
 			$years.html(
 				`<div class="eda-empty">
 					<div class="eda-empty-title">${__("Nothing archived yet")}</div>
@@ -313,7 +355,7 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 
 		if (d.is_manager) {
 			$main.find(".eda-manager").show();
-			$main.find(".eda-restore").toggleClass("is-disabled", !years.length);
+			$main.find(".eda-restore").toggleClass("is-disabled", !years.length || restoring);
 			$main
 				.find(".eda-cutoff")
 				.text(
@@ -341,7 +383,18 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 		}
 
 		render_footprint(d.live_tables || []);
-		load_browse($main.find(".eda-browse-list"));
+		if (restoring) {
+			$main.find(".eda-browse-list").html(
+				`<div class="eda-empty"><div class="eda-empty-title">${__(
+					"Restore in progress"
+				)}</div><div class="eda-muted">${__(
+					"Browse is paused so it does not fight the restore for database locks."
+				)}</div></div>`
+			);
+			$main.find(".eda-browse-open").prop("disabled", true);
+		} else {
+			load_browse($main.find(".eda-browse-list"));
+		}
 	}
 
 	function render_footprint(tables) {
@@ -970,13 +1023,13 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 				{
 					fieldname: "run_now",
 					fieldtype: "Check",
-					label: __("Run now (do not wait for a background worker)"),
+					label: __("Run immediately (do not use the job queue)"),
 					default: 1,
+					read_only: 1,
 				},
 			],
 			primary_action_label: __("Preview & Restore"),
 			primary_action: (values) => {
-				const run_now = cint(values.run_now);
 				d.disable_primary_action();
 				frappe.call("erpnext_data_archiver.api.preview_restore", values).then((r) => {
 					const p = r.message || {};
@@ -985,14 +1038,12 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 							.call({
 								method: "erpnext_data_archiver.api.restore_year",
 								freeze: true,
-								freeze_message: run_now
-									? __("Restoring {0}…", [values.fiscal_year])
-									: __("Queuing restore…"),
-								timeout: run_now ? 600000 : 120000,
+								freeze_message: __("Starting restore…"),
+								timeout: 120000,
 								args: {
 									fiscal_year: values.fiscal_year,
 									force: force || 0,
-									run_now,
+									run_now: 1,
 								},
 							})
 							.then((res) => {
@@ -1038,6 +1089,20 @@ frappe.pages["archive-retrieval"].on_page_load = function (wrapper) {
 	});
 
 	bind_browse_events($main);
+
+	frappe.realtime.on("eda_restore_progress", (data) => {
+		frappe.show_alert(
+			{
+				message: __("Restoring {0}: {1} ({2} rows)", [
+					data.fiscal_year,
+					data.doctype,
+					data.rows,
+				]),
+				indicator: "blue",
+			},
+			3
+		);
+	});
 
 	frappe.realtime.on("eda_archive_progress", (data) => {
 		frappe.show_alert(
